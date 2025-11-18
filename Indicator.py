@@ -1,5 +1,4 @@
 import pandas as pd
-import yfinance as yf
 import numpy as np
 from datetime import datetime
 import time
@@ -7,22 +6,28 @@ import threading
 import tkinter as tk
 from tkinter import ttk, scrolledtext
 import sys
+from binance.client import Client
+from binance.exceptions import BinanceAPIException
 
-# ============= CONFIGURACIÓN =============
-symbols = ["FET-USD", "XLM-USD", "BTC-USD"]
+# ============= CONFIGURACIÓN BINANCE =============
+# Configura tu API Key y Secret Key aquí
+API_KEY = "F9D9iYQqpiQvZ7FqSuaGugeN1I4QfnBTMnro1SGrga84PZeC7SpXFHiwqkWBkGlo"
+API_SECRET = "yAseWTGu6vFlPKyIGkhttip23lcLVsvnybOgflFSt23EE1RjVg0mzdtTE84DBVNY"
+
+symbols = ["FETUSDT", "XLMUSDT", "BTCUSDT"]
 length = 8                  
 UPDATE_INTERVAL = 1  # ⬅️ 1 SEGUNDO
 
 timeframes = {
-    "30m": "30m",
-    "1h":  "1h", 
-    "2h":  "2h"
+    "30m": Client.KLINE_INTERVAL_30MINUTE,
+    "1h":  Client.KLINE_INTERVAL_1HOUR, 
+    "2h":  Client.KLINE_INTERVAL_2HOUR
 }
 
 class TradingBotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("🤖 Bot TradingView - Múltiples Símbolos")
+        self.root.title("🤖 Bot TradingView - Múltiples Símbolos (BINANCE)")
         self.root.geometry("1000x800")
         self.root.configure(bg='#2b2b2b')
         
@@ -30,7 +35,16 @@ class TradingBotGUI:
         self.running = False
         self.contador = 0
         
-        self.setup_ui()
+        # Cliente de Binance
+        try:
+            self.client = Client(API_KEY, API_SECRET)
+            self.setup_ui()
+            self.log_message("✅ Conectado a Binance API", 'INFO')
+        except Exception as e:
+            self.setup_ui()
+            self.log_message(f"❌ Error conectando a Binance: {str(e)}", 'ERROR')
+            self.log_message("⚠️ Usando cliente sin autenticación para datos públicos", 'WARNING')
+            self.client = Client()  # Cliente sin autenticación (solo datos públicos)
     
     def setup_ui(self):
         # Frame principal
@@ -44,7 +58,7 @@ class TradingBotGUI:
         
         # Título
         title_label = tk.Label(main_frame, 
-                              text="🤖 BOT TRADINGVIEW - 3 SÍMBOLOS (FET, XLM, BTC)", 
+                              text="🤖 BOT TRADINGVIEW - 3 SÍMBOLOS (FET, XLM, BTC) - BINANCE", 
                               font=('Arial', 16, 'bold'),
                               fg='white',
                               bg='#2b2b2b')
@@ -52,7 +66,7 @@ class TradingBotGUI:
         
         # Subtítulo
         subtitle_label = tk.Label(main_frame,
-                                 text="✅ Analizando VELA ACTUAL (incompleta) | ⏰ Actualizando CADA SEGUNDO",
+                                 text="✅ Analizando VELA ACTUAL (incompleta) | ⏰ Actualizando CADA SEGUNDO | 📊 DATOS BINANCE",
                                  font=('Arial', 10),
                                  fg='#cccccc',
                                  bg='#2b2b2b')
@@ -188,6 +202,7 @@ class TradingBotGUI:
             
             self.log_message("🤖 Bot iniciado - Analizando 3 símbolos: FET, XLM, BTC", 'INFO')
             self.log_message("⏰ Actualización CADA SEGUNDO en tiempo real", 'INFO')
+            self.log_message("📊 Datos en tiempo real desde Binance", 'INFO')
             
             # Iniciar el bucle del bot en un hilo separado
             self.bot_thread = threading.Thread(target=self.run_bot_segundo_a_segundo, daemon=True)
@@ -224,7 +239,7 @@ class TradingBotGUI:
                 for symbol in symbols:
                     # Solo log detallado cada 10 ejecuciones
                     if self.contador % 10 == 1:
-                        self.log_message(f"\n🔍 Analizando {symbol}...", symbol.replace('-USD', ''))
+                        self.log_message(f"\n🔍 Analizando {symbol}...", symbol.replace('USDT', ''))
                     
                     resultados, progresos = self.analizar_symbol(symbol)
                     señal = self.generar_señal_trading(resultados, symbol)
@@ -312,38 +327,50 @@ class TradingBotGUI:
         self.summary_label.config(text=resumen)
         self.log_message(f"🎯 RESUMEN GENERAL: {resumen}", 'INFO')
 
-    # ============= FUNCIONES DEL BOT (MANTENIDAS) =============
+    # ============= FUNCIONES DEL BOT ACTUALIZADAS PARA BINANCE =============
     
-    def obtener_datos_tiempo_real(self, symbol, timeframe, period="5d"):
+    def obtener_datos_tiempo_real(self, symbol, timeframe):
         """
-        Obtiene datos INCLUYENDO la vela actual en formación
+        Obtiene datos de Binance INCLUYENDO la vela actual en formación
         """
-        ticker = yf.Ticker(symbol)
-        
-        if timeframe == "2h":
-            # Para 2h, usamos datos de 1h y resampleamos
-            df_1h = ticker.history(period="10d", interval="1h")
-            if df_1h.empty:
-                raise Exception("No hay datos")
+        try:
+            # Obtener velas de Binance
+            klines = self.client.get_klines(
+                symbol=symbol,
+                interval=timeframe,
+                limit=100  # Obtener últimas 100 velas
+            )
             
-            # Resamplear a 2h - INCLUYENDO VELA ACTUAL
-            df_2h = df_1h.resample('2H').agg({
-                'Open': 'first',
-                'High': 'max',
-                'Low': 'min', 
-                'Close': 'last',
-                'Volume': 'sum'
-            }).dropna()
+            if not klines:
+                raise Exception("No hay datos de Binance")
             
-            return df_2h  # ⬅️ INCLUYE vela actual
+            # Convertir a DataFrame
+            df = pd.DataFrame(klines, columns=[
+                'Open time', 'Open', 'High', 'Low', 'Close', 'Volume',
+                'Close time', 'Quote asset volume', 'Number of trades',
+                'Taker buy base asset volume', 'Taker buy quote asset volume', 'Ignore'
+            ])
             
-        else:
-            # Para 30m y 1h - INCLUYENDO VELA ACTUAL
-            df = ticker.history(period=period, interval=timeframe)
-            if df.empty:
-                raise Exception("No hay datos")
+            # Convertir tipos de datos
+            df['Open'] = df['Open'].astype(float)
+            df['High'] = df['High'].astype(float)
+            df['Low'] = df['Low'].astype(float)
+            df['Close'] = df['Close'].astype(float)
+            df['Volume'] = df['Volume'].astype(float)
+            
+            # Convertir timestamp a datetime
+            df['Open time'] = pd.to_datetime(df['Open time'], unit='ms')
+            df['Close time'] = pd.to_datetime(df['Close time'], unit='ms')
+            
+            # Establecer índice
+            df.set_index('Open time', inplace=True)
             
             return df  # ⬅️ INCLUYE vela actual
+            
+        except BinanceAPIException as e:
+            raise Exception(f"Error Binance API: {e.message}")
+        except Exception as e:
+            raise Exception(f"Error obteniendo datos: {str(e)}")
 
     def calcular_indicador_oo(self, df, symbol):
         """Calcula el indicador usando vela actual INCOMPLETA"""
@@ -374,7 +401,7 @@ class TradingBotGUI:
             # Debug info (solo cada 10 ejecuciones)
             if self.contador % 10 == 1:
                 diff = ultima_up - ultima_down
-                symbol_short = symbol.replace('-USD', '')
+                symbol_short = symbol.replace('USDT', '')
                 self.log_message(f"    {symbol_short} - up: {ultima_up:.4f}, down: {ultima_down:.4f}, diff: {diff:.4f}", symbol_short)
             
             if ultima_up > ultima_down:
@@ -389,15 +416,15 @@ class TradingBotGUI:
         """Calcula el progreso de la vela actual"""
         ahora = datetime.now()
         
-        if timeframe == "30m":
+        if timeframe == Client.KLINE_INTERVAL_30MINUTE:
             progreso = (ahora.minute % 30) / 30 * 100
             minutos_restantes = 30 - (ahora.minute % 30)
             return f"{progreso:.0f}% ({minutos_restantes}min rest)"
-        elif timeframe == "1h":
+        elif timeframe == Client.KLINE_INTERVAL_1HOUR:
             progreso = ahora.minute / 60 * 100
             minutos_restantes = 60 - ahora.minute
             return f"{progreso:.0f}% ({minutos_restantes}min rest)"
-        elif timeframe == "2h":
+        elif timeframe == Client.KLINE_INTERVAL_2HOUR:
             hora_en_2h_ciclo = ahora.hour % 2
             progreso = (hora_en_2h_ciclo * 60 + ahora.minute) / 120 * 100
             horas_restantes = 1 - hora_en_2h_ciclo
@@ -406,12 +433,12 @@ class TradingBotGUI:
 
     def analizar_symbol(self, symbol):
         """Analiza un símbolo específico"""
-        symbol_short = symbol.replace('-USD', '')
+        symbol_short = symbol.replace('USDT', '')
         
         # Solo log detallado cada 10 ejecuciones para no saturar
         if self.contador % 10 == 1:
             self.log_message(f"📊 ANÁLISIS {symbol_short} - Hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", symbol_short)
-            self.log_message("🎯 Usando VELA ACTUAL (señales en tiempo real)", symbol_short)
+            self.log_message("🎯 Usando VELA ACTUAL (señales en tiempo real) - BINANCE", symbol_short)
             self.log_message("-" * 50, symbol_short)
         
         resultados = {}
@@ -468,7 +495,7 @@ class TradingBotGUI:
         verdes = sum(1 for c in resultados.values() if "VERDE" in c)
         rojos = sum(1 for c in resultados.values() if "ROJO" in c)
         
-        symbol_short = symbol.replace('-USD', '')
+        symbol_short = symbol.replace('USDT', '')
         
         # Solo log cada 10 ejecuciones para no saturar
         if self.contador % 10 == 1:
