@@ -9,14 +9,13 @@ import sys
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 
-# ============= CONFIGURACIÓN BINANCE =============
-# Configura tu API Key y Secret Key aquí
+# ============= BINANCE CONFIGURATION =============
 API_KEY = "F9D9iYQqpiQvZ7FqSuaGugeN1I4QfnBTMnro1SGrga84PZeC7SpXFHiwqkWBkGlo"
 API_SECRET = "yAseWTGu6vFlPKyIGkhttip23lcLVsvnybOgflFSt23EE1RjVg0mzdtTE84DBVNY"
 
-symbols = ["FETUSDT", "XLMUSDT", "BTCUSDT"]
+symbols = ["BTCUSDT", "FETUSDT", "LINKUSDT", "XLMUSDT", "SOLUSDT"]
 length = 8                  
-UPDATE_INTERVAL = 1  # ⬅️ 1 SEGUNDO
+UPDATE_INTERVAL = 1  # ⬅️ 1 SECOND
 
 timeframes = {
     "30m": Client.KLINE_INTERVAL_30MINUTE,
@@ -24,167 +23,274 @@ timeframes = {
     "2h":  Client.KLINE_INTERVAL_2HOUR
 }
 
+# Configure dark theme colors
+DARK_BG = '#1a1a1a'
+DARKER_BG = '#0d0d0d'
+DARK_FRAME = '#2d2d2d'
+TEXT_LIGHT = '#ffffff'
+TEXT_GRAY = '#cccccc'
+GREEN = '#00ff00'
+RED = '#ff0000'
+YELLOW = '#ffff00'
+GOLD = '#ffd700'
+
 class TradingBotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("🤖 Bot TradingView - Múltiples Símbolos (BINANCE)")
-        self.root.geometry("1000x800")
-        self.root.configure(bg='#2b2b2b')
+        self.root.title("🤖 Trading Bot - Multiple Symbols (BINANCE) - HEIKIN ASHI")
+        self.root.geometry("1200x900")
+        self.root.configure(bg=DARK_BG)
         
-        # Variables de control
+        # Configure ttk style for dark theme
+        self.style = ttk.Style()
+        self.style.theme_use('clam')
+        
+        # Configure styles for dark theme
+        self.style.configure('TFrame', background=DARK_BG)
+        self.style.configure('TLabel', background=DARK_BG, foreground=TEXT_LIGHT)
+        self.style.configure('TLabelframe', background=DARK_BG, foreground=TEXT_LIGHT)
+        self.style.configure('TLabelframe.Label', background=DARK_BG, foreground=TEXT_LIGHT)
+        
+        # Control variables
         self.running = False
-        self.contador = 0
+        self.counter = 0
+        self.current_prices = {}
         
-        # Cliente de Binance
+        # Binance client
         try:
             self.client = Client(API_KEY, API_SECRET)
             self.setup_ui()
-            self.log_message("✅ Conectado a Binance API", 'INFO')
+            self.log_message("✅ Connected to Binance API", 'INFO')
         except Exception as e:
             self.setup_ui()
-            self.log_message(f"❌ Error conectando a Binance: {str(e)}", 'ERROR')
-            self.log_message("⚠️ Usando cliente sin autenticación para datos públicos", 'WARNING')
-            self.client = Client()  # Cliente sin autenticación (solo datos públicos)
-    
+            self.log_message(f"❌ Error connecting to Binance: {str(e)}", 'ERROR')
+            self.log_message("⚠️ Using unauthenticated client for public data", 'WARNING')
+            self.client = Client()
+
     def setup_ui(self):
-        # Frame principal
+        # Main frame
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        main_frame.configure(style='TFrame')
         
-        # Configurar grid weights
+        # Configure grid weights
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
         
-        # Título
+        # Title
         title_label = tk.Label(main_frame, 
-                              text="🤖 BOT TRADINGVIEW - 3 SÍMBOLOS (FET, XLM, BTC) - BINANCE", 
+                              text="🤖 TRADING BOT - LIVE PRICE + CANDLE % MOVEMENT - HEIKIN ASHI", 
                               font=('Arial', 16, 'bold'),
-                              fg='white',
-                              bg='#2b2b2b')
-        title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
+                              fg=TEXT_LIGHT,
+                              bg=DARK_BG)
+        title_label.grid(row=0, column=0, columnspan=len(symbols), pady=(0, 20))
         
-        # Subtítulo
+        # Subtitle
         subtitle_label = tk.Label(main_frame,
-                                 text="✅ Analizando VELA ACTUAL (incompleta) | ⏰ Actualizando CADA SEGUNDO | 📊 DATOS BINANCE",
+                                 text="💰 LIVE PRICE | 📊 % CURRENT CANDLE MOVEMENT | 🕯️ HEIKIN ASHI",
                                  font=('Arial', 10),
-                                 fg='#cccccc',
-                                 bg='#2b2b2b')
-        subtitle_label.grid(row=1, column=0, columnspan=3, pady=(0, 20))
+                                 fg=TEXT_GRAY,
+                                 bg=DARK_BG)
+        subtitle_label.grid(row=1, column=0, columnspan=len(symbols), pady=(0, 20))
         
-        # Frame de controles
-        control_frame = ttk.Frame(main_frame)
-        control_frame.grid(row=2, column=0, columnspan=3, pady=(0, 20), sticky=(tk.W, tk.E))
+        # Control frame
+        control_frame = tk.Frame(main_frame, bg=DARK_BG)
+        control_frame.grid(row=2, column=0, columnspan=len(symbols), pady=(0, 20), sticky=(tk.W, tk.E))
         
-        # Botones de control
+        # Control buttons
         self.start_button = tk.Button(control_frame, 
-                                     text="▶️ INICIAR BOT", 
+                                     text="▶️ START BOT", 
                                      command=self.start_bot,
                                      font=('Arial', 12, 'bold'),
                                      bg='#28a745',
-                                     fg='white',
+                                     fg=TEXT_LIGHT,
                                      width=15,
-                                     height=2)
+                                     height=2,
+                                     relief='flat',
+                                     bd=0)
         self.start_button.pack(side=tk.LEFT, padx=(0, 10))
         
         self.stop_button = tk.Button(control_frame, 
-                                    text="⏸️ PAUSAR BOT", 
+                                    text="⏸️ STOP BOT", 
                                     command=self.stop_bot,
                                     font=('Arial', 12, 'bold'),
                                     bg='#dc3545',
-                                    fg='white',
+                                    fg=TEXT_LIGHT,
                                     width=15,
                                     height=2,
-                                    state=tk.DISABLED)
+                                    state=tk.DISABLED,
+                                    relief='flat',
+                                    bd=0)
         self.stop_button.pack(side=tk.LEFT, padx=(0, 10))
         
-        # Estado del bot
+        # Bot status
         self.status_label = tk.Label(control_frame,
-                                    text="🛑 BOT DETENIDO",
+                                    text="🛑 BOT STOPPED",
                                     font=('Arial', 12, 'bold'),
                                     fg='#dc3545',
-                                    bg='#2b2b2b')
+                                    bg=DARK_BG)
         self.status_label.pack(side=tk.LEFT, padx=(20, 0))
         
-        # Frame para resultados de los 3 símbolos
+        # Frames for symbol results
         self.symbol_frames = {}
         for i, symbol in enumerate(symbols):
-            symbol_frame = ttk.LabelFrame(main_frame, text=f"📊 {symbol}", padding="10")
+            # Create custom frame with dark background
+            symbol_frame = tk.Frame(main_frame, bg=DARK_FRAME, relief='ridge', bd=1)
             symbol_frame.grid(row=3, column=i, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5, pady=(0, 10))
             symbol_frame.columnconfigure(0, weight=1)
             
-            # Información del símbolo
-            time_label = tk.Label(symbol_frame, text="Hora: --:--:--", font=('Arial', 9))
-            time_label.grid(row=0, column=0, sticky=tk.W, pady=2)
+            # Symbol title
+            title_label = tk.Label(symbol_frame, text=f"📊 {symbol}", 
+                                  font=('Arial', 12, 'bold'),
+                                  fg=TEXT_LIGHT,
+                                  bg=DARK_FRAME)
+            title_label.grid(row=0, column=0, sticky=tk.W, pady=(10, 5), padx=10)
             
-            # Resultados por timeframe
+            # Current price
+            price_label = tk.Label(symbol_frame, text="Price: --", 
+                                  font=('Arial', 11, 'bold'), 
+                                  fg=GOLD,
+                                  bg=DARK_FRAME)
+            price_label.grid(row=1, column=0, sticky=tk.W, pady=(0, 8), padx=10)
+            
+            # Symbol information
+            time_label = tk.Label(symbol_frame, text="Time: --:--:--", 
+                                 font=('Arial', 9),
+                                 fg=TEXT_GRAY,
+                                 bg=DARK_FRAME)
+            time_label.grid(row=2, column=0, sticky=tk.W, pady=2, padx=10)
+            
+            # Results by timeframe
             result_labels = {}
-            row_idx = 1
+            row_idx = 3
             
             for tf_name in timeframes.keys():
-                label = tk.Label(symbol_frame, text=f"{tf_name.upper():>4}: --", font=('Arial', 10, 'bold'))
-                label.grid(row=row_idx, column=0, sticky=tk.W, pady=1)
+                label = tk.Label(symbol_frame, 
+                                text=f"{tf_name.upper():>4}: -- | %: --", 
+                                font=('Arial', 10, 'bold'),
+                                fg=TEXT_LIGHT,
+                                bg=DARK_FRAME,
+                                anchor='w')
+                label.grid(row=row_idx, column=0, sticky=tk.W, pady=1, padx=10)
                 result_labels[tf_name] = label
                 row_idx += 1
             
-            # Señal de trading
-            signal_label = tk.Label(symbol_frame, text="SEÑAL: --", font=('Arial', 11, 'bold'))
-            signal_label.grid(row=row_idx, column=0, sticky=tk.W, pady=(5, 0))
+            # Trading signal
+            signal_label = tk.Label(symbol_frame, 
+                                   text="SIGNAL: --", 
+                                   font=('Arial', 11, 'bold'),
+                                   fg=TEXT_LIGHT,
+                                   bg=DARK_FRAME)
+            signal_label.grid(row=row_idx, column=0, sticky=tk.W, pady=(8, 5), padx=10)
             row_idx += 1
             
-            # Progreso de velas
+            # Candle progress
             progress_labels = {}
             for j, tf_name in enumerate(timeframes.keys()):
-                label = tk.Label(symbol_frame, text=f"{tf_name.upper()}: --", font=('Arial', 8))
-                label.grid(row=row_idx, column=0, sticky=tk.W, pady=1)
+                label = tk.Label(symbol_frame, 
+                                text=f"{tf_name.upper()}: --", 
+                                font=('Arial', 8),
+                                fg=TEXT_GRAY,
+                                bg=DARK_FRAME)
+                label.grid(row=row_idx, column=0, sticky=tk.W, pady=1, padx=10)
                 progress_labels[tf_name] = label
                 row_idx += 1
             
             self.symbol_frames[symbol] = {
+                'price_label': price_label,
                 'time_label': time_label,
                 'result_labels': result_labels,
                 'signal_label': signal_label,
                 'progress_labels': progress_labels
             }
         
-        # Configurar igual ancho para las columnas de símbolos
+        # Configure equal width for symbol columns
         for i in range(len(symbols)):
             main_frame.columnconfigure(i, weight=1)
         
-        # Resumen general
-        summary_frame = ttk.LabelFrame(main_frame, text="🎯 RESUMEN GENERAL", padding="10")
-        summary_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(10, 10))
+        # General summary
+        summary_frame = tk.Frame(main_frame, bg=DARK_FRAME, relief='ridge', bd=1)
+        summary_frame.grid(row=4, column=0, columnspan=len(symbols), sticky=(tk.W, tk.E), pady=(10, 10))
         
-        self.summary_label = tk.Label(summary_frame, text="--", font=('Arial', 12, 'bold'))
-        self.summary_label.pack()
+        summary_title = tk.Label(summary_frame, text="🎯 GENERAL SUMMARY", 
+                                font=('Arial', 11, 'bold'),
+                                fg=TEXT_LIGHT,
+                                bg=DARK_FRAME)
+        summary_title.pack(pady=(5, 0))
         
-        # Consola de logs
-        log_frame = ttk.LabelFrame(main_frame, text="📝 LOGS DETALLADOS", padding="10")
-        log_frame.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10, 0))
+        self.summary_label = tk.Label(summary_frame, 
+                                     text="--", 
+                                     font=('Arial', 12, 'bold'),
+                                     fg=TEXT_LIGHT,
+                                     bg=DARK_FRAME)
+        self.summary_label.pack(pady=(0, 5))
+        
+        # Log console
+        log_frame = tk.Frame(main_frame, bg=DARK_FRAME, relief='ridge', bd=1)
+        log_frame.grid(row=5, column=0, columnspan=len(symbols), sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10, 0))
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
         main_frame.rowconfigure(5, weight=1)
         
+        log_title = tk.Label(log_frame, text="📝 DETAILED LOGS", 
+                            font=('Arial', 11, 'bold'),
+                            fg=TEXT_LIGHT,
+                            bg=DARK_FRAME)
+        log_title.grid(row=0, column=0, sticky=tk.W, padx=10, pady=5)
+        
         self.log_text = scrolledtext.ScrolledText(log_frame, 
                                                  height=12, 
                                                  width=100,
-                                                 bg='#1e1e1e',
-                                                 fg='#ffffff',
-                                                 font=('Consolas', 8))
-        self.log_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+                                                 bg=DARKER_BG,
+                                                 fg=TEXT_LIGHT,
+                                                 font=('Consolas', 8),
+                                                 relief='flat',
+                                                 bd=0)
+        self.log_text.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=10, pady=(0, 10))
         
-        # Configurar tags para colores en los logs
-        self.log_text.tag_config('VERDE', foreground='#00ff00')
-        self.log_text.tag_config('ROJO', foreground='#ff0000')
+        # Configure tags for log colors
+        self.log_text.tag_config('GREEN', foreground=GREEN)
+        self.log_text.tag_config('RED', foreground=RED)
         self.log_text.tag_config('ERROR', foreground='#ff6b6b')
         self.log_text.tag_config('INFO', foreground='#4ecdc4')
-        self.log_text.tag_config('WARNING', foreground='#ffe66d')
+        self.log_text.tag_config('WARNING', foreground=YELLOW)
         self.log_text.tag_config('BTC', foreground='#f7931a')
         self.log_text.tag_config('FET', foreground='#00d1b2')
         self.log_text.tag_config('XLM', foreground='#14b6ff')
-        
+        self.log_text.tag_config('LINK', foreground='#2a5caa')
+        self.log_text.tag_config('SOL', foreground='#00ffbd')
+
+    def get_current_price(self, symbol):
+        """Gets the current price of the symbol"""
+        try:
+            ticker = self.client.get_symbol_ticker(symbol=symbol)
+            return float(ticker['price'])
+        except Exception as e:
+            self.log_message(f"❌ Error getting price for {symbol}: {str(e)}", 'ERROR')
+            return 0.0
+
+    def calculate_movement_percentage(self, df):
+        """Calculates the percentage movement of the current candle"""
+        try:
+            if len(df) < 1:
+                return 0.0
+            
+            current_candle = df.iloc[-1]
+            open_price = current_candle['Open']
+            current_price = current_candle['Close']
+            
+            if open_price == 0:
+                return 0.0
+            
+            percentage = ((current_price - open_price) / open_price) * 100
+            return percentage
+            
+        except Exception as e:
+            return 0.0
+
     def log_message(self, message, tag=None):
-        """Añade mensaje a la consola de logs"""
+        """Adds message to log console"""
         timestamp = datetime.now().strftime('%H:%M:%S')
         log_entry = f"[{timestamp}] {message}\n"
         
@@ -193,195 +299,234 @@ class TradingBotGUI:
         self.root.update_idletasks()
     
     def start_bot(self):
-        """Inicia el bot en un hilo separado"""
+        """Starts the bot in a separate thread"""
         if not self.running:
             self.running = True
             self.start_button.config(state=tk.DISABLED)
             self.stop_button.config(state=tk.NORMAL)
-            self.status_label.config(text="🟢 BOT EJECUTÁNDOSE", fg='#28a745')
+            self.status_label.config(text="🟢 BOT RUNNING", fg='#28a745')
             
-            self.log_message("🤖 Bot iniciado - Analizando 3 símbolos: FET, XLM, BTC", 'INFO')
-            self.log_message("⏰ Actualización CADA SEGUNDO en tiempo real", 'INFO')
-            self.log_message("📊 Datos en tiempo real desde Binance", 'INFO')
+            self.log_message("🤖 Bot started - Showing PRICE + % CANDLE MOVEMENT", 'INFO')
+            self.log_message("⏰ Updating EVERY SECOND in real time", 'INFO')
+            self.log_message("💰 Live prices + % movement by timeframe", 'INFO')
             
-            # Iniciar el bucle del bot en un hilo separado
-            self.bot_thread = threading.Thread(target=self.run_bot_segundo_a_segundo, daemon=True)
+            # Start bot loop in separate thread
+            self.bot_thread = threading.Thread(target=self.run_bot_second_by_second, daemon=True)
             self.bot_thread.start()
     
     def stop_bot(self):
-        """Detiene el bot"""
+        """Stops the bot"""
         if self.running:
             self.running = False
             self.start_button.config(state=tk.NORMAL)
             self.stop_button.config(state=tk.DISABLED)
-            self.status_label.config(text="🛑 BOT DETENIDO", fg='#dc3545')
-            self.log_message(f"⏹️ Bot detenido. Total de ejecuciones: {self.contador}", 'INFO')
+            self.status_label.config(text="🛑 BOT STOPPED", fg='#dc3545')
+            self.log_message(f"⏹️ Bot stopped. Total executions: {self.counter}", 'INFO')
     
-    def run_bot_segundo_a_segundo(self):
-        """Bucle principal del bot - actualización cada segundo"""
+    def run_bot_second_by_second(self):
+        """Main bot loop - update every second"""
         while self.running:
             try:
-                self.contador += 1
+                self.counter += 1
                 
-                # Actualizar interfaz
+                # Update interface
                 self.root.after(0, self.update_display_header)
                 
-                # Solo mostrar cada 10 ejecuciones para no saturar logs
-                if self.contador % 10 == 1:
+                # Only show every 10 executions to avoid log spam
+                if self.counter % 10 == 1:
                     self.log_message(f"\n{'='*80}", 'INFO')
-                    self.log_message(f"🔄 EJECUCIÓN #{self.contador}", 'INFO')
+                    self.log_message(f"🔄 EXECUTION #{self.counter}", 'INFO')
                 
-                # Analizar todos los símbolos
+                # Analyze all symbols
                 all_results = {}
                 all_progresses = {}
                 all_signals = {}
+                all_prices = {}
+                all_percentages = {}
                 
                 for symbol in symbols:
-                    # Solo log detallado cada 10 ejecuciones
-                    if self.contador % 10 == 1:
-                        self.log_message(f"\n🔍 Analizando {symbol}...", symbol.replace('USDT', ''))
+                    # Only detailed log every 10 executions
+                    if self.counter % 10 == 1:
+                        self.log_message(f"\n🔍 Analyzing {symbol}...", symbol.replace('USDT', ''))
                     
-                    resultados, progresos = self.analizar_symbol(symbol)
-                    señal = self.generar_señal_trading(resultados, symbol)
+                    # Get current price
+                    current_price = self.get_current_price(symbol)
+                    all_prices[symbol] = current_price
                     
-                    all_results[symbol] = resultados
-                    all_progresses[symbol] = progresos
-                    all_signals[symbol] = señal
+                    results, progresses, percentages = self.analyze_symbol(symbol)
+                    signal = self.generate_trading_signal(results, symbol)
+                    
+                    all_results[symbol] = results
+                    all_progresses[symbol] = progresses
+                    all_signals[symbol] = signal
+                    all_percentages[symbol] = percentages
                 
-                # Actualizar resultados en la interfaz (SIEMPRE)
-                self.root.after(0, lambda: self.update_all_results(all_results, all_progresses, all_signals))
+                # Update results in interface (ALWAYS)
+                self.root.after(0, lambda: self.update_all_results(all_results, all_progresses, all_signals, all_prices, all_percentages))
                 
-                # Generar resumen general (solo log cada 10 ejecuciones)
-                if self.contador % 10 == 1:
-                    self.generar_resumen_general(all_signals)
+                # Generate general summary (only log every 10 executions)
+                if self.counter % 10 == 1:
+                    self.generate_general_summary(all_signals)
                 
-                # Esperar EXACTAMENTE 1 segundo antes de la siguiente actualización
+                # Wait EXACTLY 1 second before next update
                 time.sleep(UPDATE_INTERVAL)
                         
             except Exception as e:
-                self.log_message(f"❌ Error en el bucle principal: {str(e)}", 'ERROR')
+                self.log_message(f"❌ Error in main loop: {str(e)}", 'ERROR')
                 time.sleep(1)
     
     def update_display_header(self):
-        """Actualiza la información general en la interfaz"""
+        """Updates general information in the interface"""
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         for symbol in symbols:
-            self.symbol_frames[symbol]['time_label'].config(text=f"Hora: {current_time}")
+            self.symbol_frames[symbol]['time_label'].config(text=f"Time: {current_time}")
     
-    def update_all_results(self, all_results, all_progresses, all_signals):
-        """Actualiza los resultados de todos los símbolos en la interfaz gráfica"""
+    def update_all_results(self, all_results, all_progresses, all_signals, all_prices, all_percentages):
+        """Updates results of all symbols in the graphical interface"""
         for symbol in symbols:
-            resultados = all_results[symbol]
-            progresos = all_progresses[symbol]
-            señal = all_signals[symbol]
+            results = all_results[symbol]
+            progresses = all_progresses[symbol]
+            signal = all_signals[symbol]
+            price = all_prices[symbol]
+            percentages = all_percentages[symbol]
             
-            self.update_symbol_results(symbol, resultados, progresos, señal)
+            self.update_symbol_results(symbol, results, progresses, signal, price, percentages)
     
-    def update_symbol_results(self, symbol, resultados, progresos, señal):
-        """Actualiza los resultados de un símbolo específico"""
+    def update_symbol_results(self, symbol, results, progresses, signal, price, percentages):
+        """Updates results of a specific symbol"""
         frame_data = self.symbol_frames[symbol]
         
-        # Actualizar resultados por timeframe
-        for tf_name, color in resultados.items():
+        # Update current price
+        frame_data['price_label'].config(text=f"Price: ${price:.4f}")
+        
+        # Update results by timeframe (WITH % MOVEMENT)
+        for tf_name, color in results.items():
             label = frame_data['result_labels'][tf_name]
-            label_text = f"{tf_name.upper():>4}: {color}"
+            percentage = percentages.get(tf_name, 0.0)
+            
+            # New format: COLOR + %
+            label_text = f"{tf_name.upper():>4}: {color} | %: {percentage:+.2f}%"
             label.config(text=label_text)
             
-            # Colorear según el resultado
-            if "VERDE" in color:
-                label.config(fg='#00ff00')
-            elif "ROJO" in color:
-                label.config(fg='#ff0000')
+            # Color based on result AND percentage
+            if "GREEN" in color:
+                label.config(fg=GREEN)
+            elif "RED" in color:
+                label.config(fg=RED)
             else:
                 label.config(fg='#ff6b6b')
         
-        # Actualizar progresos
-        for tf_name, progreso in progresos.items():
+        # Update progresses
+        for tf_name, progress in progresses.items():
             label = frame_data['progress_labels'][tf_name]
-            label.config(text=f"{tf_name.upper()}: {progreso}")
+            label.config(text=f"{tf_name.upper()}: {progress}")
         
-        # Actualizar señal de trading
-        frame_data['signal_label'].config(text=f"SEÑAL: {señal}")
+        # Update trading signal
+        frame_data['signal_label'].config(text=f"SIGNAL: {signal}")
         
-        # Colorear la señal
-        if "COMPRA_FUERTE" in señal:
-            frame_data['signal_label'].config(fg='#00ff00', bg='#1e3a1e')
-        elif "VENTA_FUERTE" in señal:
-            frame_data['signal_label'].config(fg='#ff0000', bg='#3a1e1e')
-        elif "ALCISTA" in señal:
-            frame_data['signal_label'].config(fg='#90ee90', bg='#2b2b2b')
-        elif "BAJISTA" in señal:
-            frame_data['signal_label'].config(fg='#ff6b6b', bg='#2b2b2b')
+        # Color the signal
+        if "STRONG_BUY" in signal:
+            frame_data['signal_label'].config(fg=GREEN, bg='#1e3a1e')
+        elif "STRONG_SELL" in signal:
+            frame_data['signal_label'].config(fg=RED, bg='#3a1e1e')
+        elif "BULLISH" in signal:
+            frame_data['signal_label'].config(fg='#90ee90', bg=DARK_FRAME)
+        elif "BEARISH" in signal:
+            frame_data['signal_label'].config(fg='#ff6b6b', bg=DARK_FRAME)
         else:
-            frame_data['signal_label'].config(fg='#ffff00', bg='#2b2b2b')
-    
-    def generar_resumen_general(self, all_signals):
-        """Genera un resumen general de todas las señales"""
-        compras_fuertes = sum(1 for s in all_signals.values() if "COMPRA_FUERTE" in s)
-        ventas_fuertes = sum(1 for s in all_signals.values() if "VENTA_FUERTE" in s)
-        alcistas = sum(1 for s in all_signals.values() if "ALCISTA" in s)
-        bajistas = sum(1 for s in all_signals.values() if "BAJISTA" in s)
-        
-        resumen = f"📈 COMPRAS: {compras_fuertes} | 📉 VENTAS: {ventas_fuertes} | 🟢 ALCISTAS: {alcistas} | 🔻 BAJISTAS: {bajistas}"
-        
-        self.summary_label.config(text=resumen)
-        self.log_message(f"🎯 RESUMEN GENERAL: {resumen}", 'INFO')
+            frame_data['signal_label'].config(fg=YELLOW, bg=DARK_FRAME)
 
-    # ============= FUNCIONES DEL BOT ACTUALIZADAS PARA BINANCE =============
+    # ============= HEIKIN ASHI FUNCTIONS =============
     
-    def obtener_datos_tiempo_real(self, symbol, timeframe):
-        """
-        Obtiene datos de Binance INCLUYENDO la vela actual en formación
-        """
+    def convert_to_heikin_ashi(self, df):
+        """Converts a normal candle DataFrame to Heikin Ashi"""
         try:
-            # Obtener velas de Binance
+            ha_df = df.copy()
+            
+            # Calculate Heikin Ashi
+            ha_df['HA_Close'] = (df['Open'] + df['High'] + df['Low'] + df['Close']) / 4
+            
+            # Initialize HA_Open with first value
+            ha_df['HA_Open'] = 0.0
+            ha_df.loc[ha_df.index[0], 'HA_Open'] = (df['Open'].iloc[0] + df['Close'].iloc[0]) / 2
+            
+            # Calculate HA_Open for remaining candles
+            for i in range(1, len(ha_df)):
+                ha_df.iloc[i, ha_df.columns.get_loc('HA_Open')] = (
+                    ha_df['HA_Open'].iloc[i-1] + ha_df['HA_Close'].iloc[i-1]
+                ) / 2
+            
+            # Calculate HA_High and HA_Low
+            ha_df['HA_High'] = ha_df[['HA_Open', 'HA_Close', 'High']].max(axis=1)
+            ha_df['HA_Low'] = ha_df[['HA_Open', 'HA_Close', 'Low']].min(axis=1)
+            
+            # Replace original columns with Heikin Ashi
+            ha_df['Open'] = ha_df['HA_Open']
+            ha_df['High'] = ha_df['HA_High']
+            ha_df['Low'] = ha_df['HA_Low']
+            ha_df['Close'] = ha_df['HA_Close']
+            
+            # Remove temporary columns
+            ha_df.drop(['HA_Open', 'HA_High', 'HA_Low', 'HA_Close'], axis=1, inplace=True)
+            
+            return ha_df
+            
+        except Exception as e:
+            raise Exception(f"Error converting to Heikin Ashi: {str(e)}")
+    
+    def get_real_time_data(self, symbol, timeframe):
+        """Gets data from Binance INCLUDING the current forming candle"""
+        try:
+            # Get candles from Binance
             klines = self.client.get_klines(
                 symbol=symbol,
                 interval=timeframe,
-                limit=100  # Obtener últimas 100 velas
+                limit=100
             )
             
             if not klines:
-                raise Exception("No hay datos de Binance")
+                raise Exception("No data from Binance")
             
-            # Convertir a DataFrame
+            # Convert to DataFrame
             df = pd.DataFrame(klines, columns=[
                 'Open time', 'Open', 'High', 'Low', 'Close', 'Volume',
                 'Close time', 'Quote asset volume', 'Number of trades',
                 'Taker buy base asset volume', 'Taker buy quote asset volume', 'Ignore'
             ])
             
-            # Convertir tipos de datos
+            # Convert data types
             df['Open'] = df['Open'].astype(float)
             df['High'] = df['High'].astype(float)
             df['Low'] = df['Low'].astype(float)
             df['Close'] = df['Close'].astype(float)
             df['Volume'] = df['Volume'].astype(float)
             
-            # Convertir timestamp a datetime
+            # Convert timestamp to datetime
             df['Open time'] = pd.to_datetime(df['Open time'], unit='ms')
             df['Close time'] = pd.to_datetime(df['Close time'], unit='ms')
             
-            # Establecer índice
+            # Set index
             df.set_index('Open time', inplace=True)
             
-            return df  # ⬅️ INCLUYE vela actual
+            # Convert to Heikin Ashi
+            df = self.convert_to_heikin_ashi(df)
+            
+            return df
             
         except BinanceAPIException as e:
-            raise Exception(f"Error Binance API: {e.message}")
+            raise Exception(f"Binance API Error: {e.message}")
         except Exception as e:
-            raise Exception(f"Error obteniendo datos: {str(e)}")
+            raise Exception(f"Error getting data: {str(e)}")
 
-    def calcular_indicador_oo(self, df, symbol):
-        """Calcula el indicador usando vela actual INCOMPLETA"""
+    def calculate_indicator_oo(self, df, symbol):
+        """Calculates indicator using current INCOMPLETE candle in Heikin Ashi"""
         try:
-            # Verificar que tenemos datos
             if len(df) < length:
-                return "ERROR: Pocos datos"
-            
+                return "ERROR: Not enough data", 0.0
+                
             df = df.copy()
             
-            # Cálculos del indicador
+            # Indicator calculations
             df['ys1'] = (df['High'] + df['Low'] + df['Close'] * 2) / 4
             df['rk3'] = df['ys1'].ewm(span=length, adjust=False).mean()
             df['rk4'] = df['ys1'].rolling(window=length).std().fillna(0.001)
@@ -394,135 +539,154 @@ class TradingBotGUI:
             df['up'] = df['rk6'].ewm(span=length, adjust=False).mean()
             df['down'] = df['up'].ewm(span=length, adjust=False).mean()
             
-            # ⬇️⬇️⬇️ ANALIZAR LA VELA ACTUAL (INCOMPLETA) ⬇️⬇️⬇️
-            ultima_up = df['up'].iloc[-1]      # VELA ACTUAL
-            ultima_down = df['down'].iloc[-1]  # VELA ACTUAL
+            # Analyze current candle
+            last_up = df['up'].iloc[-1]
+            last_down = df['down'].iloc[-1]
             
-            # Debug info (solo cada 10 ejecuciones)
-            if self.contador % 10 == 1:
-                diff = ultima_up - ultima_down
+            # Debug info (only every 10 executions)
+            if self.counter % 10 == 1:
+                diff = last_up - last_down
                 symbol_short = symbol.replace('USDT', '')
-                self.log_message(f"    {symbol_short} - up: {ultima_up:.4f}, down: {ultima_down:.4f}, diff: {diff:.4f}", symbol_short)
+                self.log_message(f"    {symbol_short} - up: {last_up:.4f}, down: {last_down:.4f}, diff: {diff:.4f}", symbol_short)
             
-            if ultima_up > ultima_down:
-                return "VERDE 🟢"   
+            if last_up > last_down:
+                return "GREEN 🟢", (last_up - last_down)
             else:
-                return "ROJO 🔴"
+                return "RED 🔴", (last_up - last_down)
                 
         except Exception as e:
-            return f"ERROR: {str(e)}"
+            return f"ERROR: {str(e)}", 0.0
 
-    def obtener_progreso_vela_actual(self, timeframe):
-        """Calcula el progreso de la vela actual"""
-        ahora = datetime.now()
+    def get_current_candle_progress(self, timeframe):
+        """Calculates progress of current candle"""
+        now = datetime.now()
         
         if timeframe == Client.KLINE_INTERVAL_30MINUTE:
-            progreso = (ahora.minute % 30) / 30 * 100
-            minutos_restantes = 30 - (ahora.minute % 30)
-            return f"{progreso:.0f}% ({minutos_restantes}min rest)"
+            progress = (now.minute % 30) / 30 * 100
+            minutes_remaining = 30 - (now.minute % 30)
+            return f"{progress:.0f}% ({minutes_remaining}min left)"
         elif timeframe == Client.KLINE_INTERVAL_1HOUR:
-            progreso = ahora.minute / 60 * 100
-            minutos_restantes = 60 - ahora.minute
-            return f"{progreso:.0f}% ({minutos_restantes}min rest)"
+            progress = now.minute / 60 * 100
+            minutes_remaining = 60 - now.minute
+            return f"{progress:.0f}% ({minutes_remaining}min left)"
         elif timeframe == Client.KLINE_INTERVAL_2HOUR:
-            hora_en_2h_ciclo = ahora.hour % 2
-            progreso = (hora_en_2h_ciclo * 60 + ahora.minute) / 120 * 100
-            horas_restantes = 1 - hora_en_2h_ciclo
-            minutos_restantes = 60 - ahora.minute
-            return f"{progreso:.0f}% ({horas_restantes}h {minutos_restantes}min rest)"
+            hour_in_2h_cycle = now.hour % 2
+            progress = (hour_in_2h_cycle * 60 + now.minute) / 120 * 100
+            hours_remaining = 1 - hour_in_2h_cycle
+            minutes_remaining = 60 - now.minute
+            return f"{progress:.0f}% ({hours_remaining}h {minutes_remaining}min left)"
 
-    def analizar_symbol(self, symbol):
-        """Analiza un símbolo específico"""
+    def analyze_symbol(self, symbol):
+        """Analyzes a specific symbol using Heikin Ashi"""
         symbol_short = symbol.replace('USDT', '')
         
-        # Solo log detallado cada 10 ejecuciones para no saturar
-        if self.contador % 10 == 1:
-            self.log_message(f"📊 ANÁLISIS {symbol_short} - Hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", symbol_short)
-            self.log_message("🎯 Usando VELA ACTUAL (señales en tiempo real) - BINANCE", symbol_short)
+        # Only detailed log every 10 executions to avoid spam
+        if self.counter % 10 == 1:
+            self.log_message(f"📊 ANALYSIS {symbol_short} - Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", symbol_short)
+            self.log_message("🎯 Using CURRENT HEIKIN ASHI CANDLE + % MOVEMENT", symbol_short)
             self.log_message("-" * 50, symbol_short)
         
-        resultados = {}
-        progresos = {}
+        results = {}
+        progresses = {}
+        percentages = {}
         
-        for nombre, tf in timeframes.items():
+        for name, tf in timeframes.items():
             try:
-                if self.contador % 10 == 1:
-                    self.log_message(f"Analizando {nombre}...", symbol_short)
+                if self.counter % 10 == 1:
+                    self.log_message(f"Analyzing {name}...", symbol_short)
                 
-                df = self.obtener_datos_tiempo_real(symbol, tf)
+                df = self.get_real_time_data(symbol, tf)
                 
                 if len(df) < length:
-                    color = f"ERROR: Solo {len(df)} velas"
+                    color = f"ERROR: Only {len(df)} candles"
+                    movement_percentage = 0.0
                 else:
-                    # Mostrar timestamp de última vela (actual) solo cada 10 ejecuciones
-                    if self.contador % 10 == 1:
-                        ultima_vela_time = df.index[-1].strftime('%Y-%m-%d %H:%M:%S')
-                        self.log_message(f"  Vela actual: {ultima_vela_time}", symbol_short)
+                    # Calculate current candle movement percentage
+                    movement_percentage = self.calculate_movement_percentage(df)
                     
-                    color = self.calcular_indicador_oo(df, symbol)
+                    # Show last candle timestamp only every 10 executions
+                    if self.counter % 10 == 1:
+                        last_candle_time = df.index[-1].strftime('%Y-%m-%d %H:%M:%S')
+                        self.log_message(f"  Current candle: {last_candle_time} | %: {movement_percentage:+.2f}%", symbol_short)
+                    
+                    color, diff = self.calculate_indicator_oo(df, symbol)
                 
-                resultados[nombre] = color
-                progresos[nombre] = self.obtener_progreso_vela_actual(tf)
+                results[name] = color
+                progresses[name] = self.get_current_candle_progress(tf)
+                percentages[name] = movement_percentage
                 
-                # Log con color solo cada 10 ejecuciones
-                if self.contador % 10 == 1:
-                    if "VERDE" in color:
-                        self.log_message(f"{nombre.upper():>4} → {color}", 'VERDE')
-                    elif "ROJO" in color:
-                        self.log_message(f"{nombre.upper():>4} → {color}", 'ROJO')
+                # Log with color only every 10 executions
+                if self.counter % 10 == 1:
+                    if "GREEN" in color:
+                        self.log_message(f"{name.upper():>4} → {color} | %: {movement_percentage:+.2f}%", 'GREEN')
+                    elif "RED" in color:
+                        self.log_message(f"{name.upper():>4} → {color} | %: {movement_percentage:+.2f}%", 'RED')
                     else:
-                        self.log_message(f"{nombre.upper():>4} → {color}", 'ERROR')
+                        self.log_message(f"{name.upper():>4} → {color} | %: {movement_percentage:+.2f}%", 'ERROR')
                     
             except Exception as e:
                 error_msg = f"ERROR: {str(e)}"
-                resultados[nombre] = error_msg
-                progresos[nombre] = "N/A"
-                if self.contador % 10 == 1:
-                    self.log_message(f"{nombre.upper():>4} → {error_msg}", 'ERROR')
+                results[name] = error_msg
+                progresses[name] = "N/A"
+                percentages[name] = 0.0
+                if self.counter % 10 == 1:
+                    self.log_message(f"{name.upper():>4} → {error_msg}", 'ERROR')
         
-        if self.contador % 10 == 1:
+        if self.counter % 10 == 1:
             self.log_message("-" * 50, symbol_short)
             
-            # Mostrar progreso de velas actuales
-            self.log_message("📈 PROGRESO VELAS ACTUALES:", symbol_short)
-            for tf, progreso in progresos.items():
-                self.log_message(f"  {tf.upper():>4} → {progreso}", symbol_short)
+            # Show current candle progress
+            self.log_message("📈 CURRENT CANDLE PROGRESS:", symbol_short)
+            for tf, progress in progresses.items():
+                self.log_message(f"  {tf.upper():>4} → {progress}", symbol_short)
         
-        return resultados, progresos
+        return results, progresses, percentages
 
-    def generar_señal_trading(self, resultados, symbol):
-        """Genera señal de trading basada en los 3 timeframes"""
-        verdes = sum(1 for c in resultados.values() if "VERDE" in c)
-        rojos = sum(1 for c in resultados.values() if "ROJO" in c)
+    def generate_trading_signal(self, results, symbol):
+        """Generates trading signal based on 3 timeframes"""
+        greens = sum(1 for c in results.values() if "GREEN" in c)
+        reds = sum(1 for c in results.values() if "RED" in c)
         
         symbol_short = symbol.replace('USDT', '')
         
-        # Solo log cada 10 ejecuciones para no saturar
-        if self.contador % 10 == 1:
-            self.log_message(f"🎯 {symbol_short} - SEÑAL: {verdes}/3 VERDE | {rojos}/3 ROJO", symbol_short)
+        # Only log every 10 executions to avoid spam
+        if self.counter % 10 == 1:
+            self.log_message(f"🎯 {symbol_short} - SIGNAL: {greens}/3 GREEN | {reds}/3 RED", symbol_short)
         
-        if verdes == 3:
-            if self.contador % 10 == 1:
-                self.log_message(f"🚀 {symbol_short} - ENTRADA COMPRA - Todos timeframes VERDE", 'VERDE')
-            return "COMPRA_FUERTE 🚀"
-        elif rojos == 3:
-            if self.contador % 10 == 1:
-                self.log_message(f"🔻 {symbol_short} - ENTRADA VENTA - Todos timeframes ROJO", 'ROJO') 
-            return "VENTA_FUERTE 🔻"
-        elif verdes == 2:
-            if self.contador % 10 == 1:
-                self.log_message(f"📈 {symbol_short} - SESIÓN ALCISTA - Mayoría VERDE", 'VERDE')
-            return "TENDENCIA_ALCISTA 📈"
-        elif rojos == 2:
-            if self.contador % 10 == 1:
-                self.log_message(f"📉 {symbol_short} - SESIÓN BAJISTA - Mayoría ROJO", 'ROJO')
-            return "TENDENCIA_BAJISTA 📉"
+        if greens == 3:
+            if self.counter % 10 == 1:
+                self.log_message(f"🚀 {symbol_short} - BUY ENTRY - All timeframes GREEN", 'GREEN')
+            return "STRONG_BUY 🚀"
+        elif reds == 3:
+            if self.counter % 10 == 1:
+                self.log_message(f"🔻 {symbol_short} - SELL ENTRY - All timeframes RED", 'RED') 
+            return "STRONG_SELL 🔻"
+        elif greens == 2:
+            if self.counter % 10 == 1:
+                self.log_message(f"📈 {symbol_short} - BULLISH SESSION - Majority GREEN", 'GREEN')
+            return "BULLISH_TREND 📈"
+        elif reds == 2:
+            if self.counter % 10 == 1:
+                self.log_message(f"📉 {symbol_short} - BEARISH SESSION - Majority RED", 'RED')
+            return "BEARISH_TREND 📉"
         else:
-            if self.contador % 10 == 1:
-                self.log_message(f"⚡ {symbol_short} - MERCADO INDECISO - Señales mixtas", 'WARNING')
-            return "CONSOLIDACIÓN ⚡"
+            if self.counter % 10 == 1:
+                self.log_message(f"⚡ {symbol_short} - UNDECIDED MARKET - Mixed signals", 'WARNING')
+            return "CONSOLIDATION ⚡"
 
-# ============= INICIALIZACIÓN =============
+    def generate_general_summary(self, all_signals):
+        """Generates a general summary of all signals"""
+        strong_buys = sum(1 for s in all_signals.values() if "STRONG_BUY" in s)
+        strong_sells = sum(1 for s in all_signals.values() if "STRONG_SELL" in s)
+        bullish = sum(1 for s in all_signals.values() if "BULLISH" in s)
+        bearish = sum(1 for s in all_signals.values() if "BEARISH" in s)
+        
+        summary = f"📈 BUYS: {strong_buys} | 📉 SELLS: {strong_sells} | 🟢 BULLISH: {bullish} | 🔻 BEARISH: {bearish}"
+        
+        self.summary_label.config(text=summary)
+        self.log_message(f"🎯 GENERAL SUMMARY: {summary}", 'INFO')
+
+# ============= INITIALIZATION =============
 if __name__ == "__main__":
     root = tk.Tk()
     app = TradingBotGUI(root)
