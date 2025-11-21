@@ -335,7 +335,6 @@ class TradingBot:
                         last_signal = self.capital_manager.last_signals.get(symbol, "")
                         if current_signal != last_signal:
                             signals_changed = True
-                            break
 
                     # ✅ SOLO EJECUTAR REBALANCE (LOS TRADES SE LOGUEAN AUTOMÁTICAMENTE)
                     if signals_changed:
