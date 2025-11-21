@@ -34,7 +34,7 @@ class CapitalManager:
             print(f"[CapitalManager] {message}")
     
     def calculate_signal_weight(self, timeframe_results):
-        """Calcula el peso de la señal basado en los timeframes - VERSIÓN BINARIA"""
+        """Calcula peso con AMARILLO = 50%"""
         timeframe_weights = {
             "30m": 0.30,
             "1h": 0.30,  
@@ -47,11 +47,13 @@ class CapitalManager:
             weight = timeframe_weights.get(tf_name, 0.0)
             
             if "GREEN" in signal:
-                total_weight += weight  # SOLO SUMAR si es GREEN
+                total_weight += weight  # 100%
+            elif "YELLOW" in signal: 
+                total_weight += weight * 0.5  # 50% 🟡
             # RED no suma nada
         
-        return total_weight  # Ej: 0.0, 0.3, 0.6, 0.7, 1.0
-    
+        return total_weight
+
     def has_signal_changed(self, symbol, current_signal_weight, threshold=0.1):
         """Determina si la señal de un símbolo específico ha cambiado significativamente"""
         last_weight = self.last_signal_weights.get(symbol, 0.0)

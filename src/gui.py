@@ -679,6 +679,8 @@ class TradingBotGUI:
             
             if "GREEN" in color:
                 label.config(fg=GREEN, bg=DARK_FRAME)
+            elif "YELLOW" in color:
+                label.config(fg=YELLOW, bg=DARK_FRAME)
             elif "RED" in color:
                 label.config(fg=RED, bg=DARK_FRAME)
             else:
@@ -700,6 +702,8 @@ class TradingBotGUI:
             frame_data['signal_label'].config(fg=GREEN, bg=BULLISH_BG)
         elif "BEARISH" in signal:
             frame_data['signal_label'].config(fg=RED, bg=BEARISH_BG)
+        elif "YELLOW" in signal:
+            frame_data['signal_label'].config(fg=YELLOW, bg=NEUTRAL_BG)
         else:
             frame_data['signal_label'].config(fg=YELLOW, bg=NEUTRAL_BG)
     

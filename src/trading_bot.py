@@ -360,11 +360,12 @@ class TradingBot:
                         self.log_message(f"🔍 DEBUG TIMING: Precios: {price_time:.2f}s, Análisis: {analysis_time:.2f}s, GUI: {gui_time:.2f}s, Total: {total_time:.2f}s", 'TIMING')
                     
                     # ✅ REBALANCEO SELECTIVO (solo si hay cambios significativos)
-                    should_rebalance = (
-                        self.counter % 5 == 0 or  # Cada 10 segundos
-                        any(self.capital_manager.has_signal_changed(symbol, 
-                             self.capital_manager.calculate_signal_weight(all_results.get(symbol, {})), 
-                             0.15) for symbol in SYMBOLS)
+                    should_rebalance = any(
+                        self.capital_manager.has_signal_changed(
+                            symbol, 
+                            self.capital_manager.calculate_signal_weight(all_results.get(symbol, {})),
+                            0.001  # Threshold mínimo
+                        ) for symbol in SYMBOLS
                     )
                     
                     if should_rebalance:
@@ -531,6 +532,8 @@ class TradingBot:
                 if self.counter % 10 == 1:
                     if "GREEN" in color:
                         self.log_message(f"{name.upper():>4} → {color} | %: {movement_percentage:+.2f}%", 'GREEN')
+                    elif "YELLOW" in color:
+                        self.log_message(f"{name.upper():>4} → {color} | %: {movement_percentage:+.2f}%", 'WARNING')
                     elif "RED" in color:
                         self.log_message(f"{name.upper():>4} → {color} | %: {movement_percentage:+.2f}%", 'RED')
                     else:
@@ -557,13 +560,14 @@ class TradingBot:
     def generate_trading_signal(self, results, symbol):
         """Genera señal de trading basada en 3 timeframes"""
         greens = sum(1 for c in results.values() if "GREEN" in c)
+        yellows = sum(1 for c in results.values() if "YELLOW" in c)
         reds = sum(1 for c in results.values() if "RED" in c)
         
         symbol_short = symbol.replace('USDC', '')
         
         # Only log every 10 executions to avoid spam
         if self.counter % 10 == 1:
-            self.log_message(f"🎯 {symbol_short} - SIGNAL: {greens}/3 GREEN | {reds}/3 RED", symbol_short)
+            self.log_message(f"🎯 {symbol_short} - SIGNAL: {greens}/3 GREEN | {yellows}/3 YELLOW | {reds}/3 RED", symbol_short)
         
         if greens == 3:
             if self.counter % 10 == 1:
@@ -581,6 +585,14 @@ class TradingBot:
             if self.counter % 10 == 1:
                 self.log_message(f"📉 {symbol_short} - BEARISH SESSION - Majority RED", 'RED')
             return "BEARISH_TREND 📉"
+        elif greens >= 1 or yellows >= 2:
+            if self.counter % 10 == 1:
+                self.log_message(f"🟡 {symbol_short} - CAUTIOUS BULLISH - Mixed with YELLOW", 'WARNING')
+            return "CAUTIOUS_BULLISH 🟡"
+        elif reds >= 1 or yellows >= 2:
+            if self.counter % 10 == 1:
+                self.log_message(f"🟡 {symbol_short} - CAUTIOUS BEARISH - Mixed with YELLOW", 'WARNING')
+            return "CAUTIOUS_BEARISH 🟡"
         else:
             if self.counter % 10 == 1:
                 self.log_message(f"⚡ {symbol_short} - UNDECIDED MARKET - Mixed signals", 'WARNING')

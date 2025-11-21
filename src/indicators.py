@@ -62,38 +62,47 @@ class TradingIndicator:
             
         except Exception as e:
             return 0.0
-    
+
     def calculate_indicator_oo(self, df, symbol):
-        """Calcula indicador usando vela INCOMPLETA actual en Heikin Ashi"""
+        """Calcula indicador con estado AMARILLO"""
         try:
             if len(df) < self.length:
                 return "ERROR: No hay suficientes datos", 0.0
                 
             df = df.copy()
             
-            # Cálculos del indicador
+            # Cálculos existentes
             df['ys1'] = (df['High'] + df['Low'] + df['Close'] * 2) / 4
             df['rk3'] = df['ys1'].ewm(span=self.length, adjust=False).mean()
             df['rk4'] = df['ys1'].rolling(window=self.length).std().fillna(0.001)
-            
             df['rk5'] = np.where(df['rk4'] != 0, 
                                 (df['ys1'] - df['rk3']) * 100 / df['rk4'], 
                                 0)
-            
             df['rk6'] = df['rk5'].ewm(span=self.length, adjust=False).mean()
             df['up'] = df['rk6'].ewm(span=self.length, adjust=False).mean()
             df['down'] = df['up'].ewm(span=self.length, adjust=False).mean()
             
-            # Analizar vela actual
+            # Analizar vela actual Y anterior para detectar amarillo
             last_up = df['up'].iloc[-1]
             last_down = df['down'].iloc[-1]
+            prev_up = df['up'].iloc[-2] 
+            prev_down = df['down'].iloc[-2]
             
             diff = last_up - last_down
             
+            # ✅ DETECTAR AMARILLO (transición)
+            is_yellow = (prev_up < last_up) and (last_down < prev_down)
+            
             if last_up > last_down:
-                return "GREEN 🟢", diff
+                if is_yellow:
+                    return "YELLOW 🟡", diff * 0.5  # 50% del peso
+                else:
+                    return "GREEN 🟢", diff
             else:
-                return "RED 🔴", diff
-                
+                if is_yellow:
+                    return "YELLOW 🟡", diff * 0.5  # 50% del peso  
+                else:
+                    return "RED 🔴", diff
+                    
         except Exception as e:
             return f"ERROR: {str(e)}", 0.0
