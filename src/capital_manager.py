@@ -282,7 +282,7 @@ class CapitalManager:
             return error_msg
 
     def rebalance_portfolio(self, all_signals, all_prices, manual_rebalance=False):
-        """Reequilibra el portfolio - AHORA CON MODO MANUAL"""
+        """Reequilibra el portfolio - VERSIÓN OPTIMIZADA"""
         try:
             # PRIMERO: Manejar configuración inicial si no se ha hecho
             if not self.initial_setup_done:
@@ -304,16 +304,19 @@ class CapitalManager:
                 if not symbol_signals or current_price == 0:
                     continue
                 
-                # Rebalancear este símbolo individualmente
-                result = self.rebalance_symbol(symbol, symbol_signals, current_price, total_usd, manual_rebalance)
+                # ✅ SOLO rebalancear si la señal cambió significativamente
+                current_signal_weight = self.calculate_signal_weight(symbol_signals)
+                signal_changed = self.has_signal_changed(symbol, current_signal_weight, threshold=0.15)
                 
-                if result:
-                    rebalance_actions.append(result)
-                    symbols_rebalanced += 1
+                if signal_changed or manual_rebalance:
+                    result = self.rebalance_symbol(symbol, symbol_signals, current_price, total_usd, manual_rebalance)
+                    if result:
+                        rebalance_actions.append(result)
+                        symbols_rebalanced += 1
             
             if rebalance_actions:
                 mode = "MANUAL" if manual_rebalance else "AUTO"
-                summary = f"[{mode}] Rebalanceados {symbols_rebalanced} símbolos: " + " | ".join(rebalance_actions)
+                summary = f"[{mode}] Rebalanceados {symbols_rebalanced} símbolos"
                 return True, summary
             else:
                 mode = "MANUAL" if manual_rebalance else "AUTO"
@@ -321,7 +324,7 @@ class CapitalManager:
                 
         except Exception as e:
             return False, f"Error en rebalanceo: {str(e)}"
-    
+        
     def get_portfolio_status(self):
         """Obtiene el estado actual del portfolio"""
         try:

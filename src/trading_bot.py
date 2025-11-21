@@ -1,9 +1,11 @@
 import threading
 import time
+import concurrent.futures
 from datetime import datetime, timedelta
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 import pandas as pd
+import numpy as np
 
 from config import *
 from indicators import HeikinAshiCalculator, TradingIndicator
@@ -14,6 +16,8 @@ class TradingBot:
         self.gui = gui_instance  # Instancia de la GUI (puede ser None inicialmente)
         self.capital_manager = CapitalManager(gui_instance)  # Nuevo gestor de capital
         self.initialize_variables()
+        # ✅ NUEVO: Cache optimizado
+        self.setup_optimized_cache()
     
     def initialize_variables(self):
         """Inicializa variables de control"""
@@ -27,8 +31,15 @@ class TradingBot:
         self.next_update_time = None
         self.execution_times = []
         self.last_rebalance_time = None
-        self.candle_cache = {}  # Nuevo: cache de velas
-        self.cache_timeout = 30  # segundos
+        self.candle_cache = {}  # Cache de velas
+        self.current_analysis = {}  # Para almacenar análisis recientes
+
+    def setup_optimized_cache(self):
+        """Configura cache más agresivo para modo test"""
+        self.cache_timeout = 300 if not TRADING_ENABLED else 30  # 5min test, 30s live
+        self.bulk_price_cache = {'data': None, 'timestamp': 0}
+        self.symbol_info_cache = {}
+        self.analysis_cache = {}
 
     def get_all_prices_bulk(self):
         """Obtiene todos los precios en una sola llamada a API"""
@@ -46,6 +57,38 @@ class TradingBot:
             self.log_message(f"❌ Error obteniendo precios bulk: {str(e)}", 'ERROR')
             return {}
 
+    def get_all_prices_bulk_optimized(self):
+        """Versión optimizada con cache de precios"""
+        try:
+            current_time = time.time()
+            
+            # ✅ Cache de 10 segundos para precios (suficiente para trading)
+            if (self.bulk_price_cache['timestamp'] and 
+                current_time - self.bulk_price_cache['timestamp'] < 10):
+                return self.bulk_price_cache['data']
+            
+            if self.client is None:
+                return {}
+            
+            tickers = self.client.get_all_tickers()
+            price_dict = {}
+            for ticker in tickers:
+                if ticker['symbol'] in SYMBOLS:
+                    price_dict[ticker['symbol']] = float(ticker['price'])
+            
+            # Actualizar cache
+            self.bulk_price_cache = {
+                'data': price_dict, 
+                'timestamp': current_time
+            }
+            
+            return price_dict
+            
+        except Exception as e:
+            self.log_message(f"❌ Error obteniendo precios bulk: {str(e)}", 'ERROR')
+            # Retornar cache viejo si hay error
+            return self.bulk_price_cache.get('data', {})
+
     def debug_timing_breakdown(self):
         """Identifica qué parte consume más tiempo"""
         import time
@@ -54,13 +97,13 @@ class TradingBot:
         
         # 1. Timing de obtener precios
         start = time.time()
-        all_prices = self.get_all_prices_bulk()
+        all_prices = self.get_all_prices_bulk_optimized()
         timing_data['precios_bulk'] = time.time() - start
         
         # 2. Timing de análisis por símbolo
         for symbol in SYMBOLS[:2]:  # Probar con 2 símbolos
             start = time.time()
-            results, progresses, percentages = self.analyze_symbol(symbol)
+            results, progresses, percentages = self.analyze_symbol_optimized(symbol)
             timing_data[f'analisis_{symbol}'] = time.time() - start
         
         # Mostrar resultados
@@ -156,9 +199,11 @@ class TradingBot:
             self.log_message(f"🤖 Bot started - Update interval: {UPDATE_INTERVAL}s", 'INFO')
             self.log_message("💰 Live prices + % movement by timeframe", 'INFO')
             self.log_message("⚖️ Capital management ENABLED - Rebalancing on signal changes", 'SUCCESS')
+            if not TRADING_ENABLED:
+                self.log_message("🔒 MODO TEST - Operaciones bloqueadas", 'TEST_MODE')
             
             # Start bot loop in separate thread
-            self.bot_thread = threading.Thread(target=self.run_bot_precise_timing, daemon=True)
+            self.bot_thread = threading.Thread(target=self.run_bot_precise_timing_optimized, daemon=True)
             self.bot_thread.start()
     
     def stop_bot(self):
@@ -176,113 +221,205 @@ class TradingBot:
                 self.log_message(f"📊 FINAL TIMING STATS: Avg: {avg_time:.3f}s, Min: {min_time:.3f}s, Max: {max_time:.3f}s", 'INFO')
             
             self.log_message(f"⏹️ Bot stopped. Total executions: {self.counter}", 'INFO')
-    
-    def run_bot_precise_timing(self):
-        """Bucle principal del bot con timing preciso"""
+
+    def analyze_all_symbols_parallel(self):
+        """Analiza símbolos en paralelo - OPTIMIZADO"""
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                futures = {
+                    executor.submit(self.analyze_symbol_optimized, symbol): symbol 
+                    for symbol in SYMBOLS
+                }
+                
+                all_results, all_progresses, all_percentages = {}, {}, {}
+                for future in concurrent.futures.as_completed(futures):
+                    symbol = futures[future]
+                    try:
+                        results, progresses, percentages = future.result(timeout=10)  # Timeout de seguridad
+                        all_results[symbol] = results
+                        all_progresses[symbol] = progresses
+                        all_percentages[symbol] = percentages
+                    except concurrent.futures.TimeoutError:
+                        self.log_message(f"⏰ Timeout analizando {symbol}", 'WARNING')
+                        all_results[symbol] = {tf: "TIMEOUT" for tf in TIMEFRAMES.keys()}
+                        all_progresses[symbol] = {tf: "N/A" for tf in TIMEFRAMES.keys()}
+                        all_percentages[symbol] = {tf: 0.0 for tf in TIMEFRAMES.keys()}
+                    except Exception as e:
+                        self.log_message(f"❌ Error analizando {symbol}: {str(e)}", 'ERROR')
+                        all_results[symbol] = {tf: "ERROR" for tf in TIMEFRAMES.keys()}
+                        all_progresses[symbol] = {tf: "N/A" for tf in TIMEFRAMES.keys()}
+                        all_percentages[symbol] = {tf: 0.0 for tf in TIMEFRAMES.keys()}
+            
+            return all_results, all_progresses, all_percentages
+            
+        except Exception as e:
+            self.log_message(f"❌ Error en análisis paralelo: {str(e)}", 'ERROR')
+            return {}, {}, {}
+
+    def analyze_symbol_optimized(self, symbol):
+        """Versión optimizada del análisis - CON CACHE"""
+        symbol_short = symbol.replace('USDC', '')
+        
+        # ✅ Cache de análisis por 30 segundos (velas no cambian tan rápido)
+        cache_key = f"analysis_{symbol}"
+        current_time = time.time()
+        
+        if (cache_key in self.analysis_cache and 
+            current_time - self.analysis_cache[cache_key]['timestamp'] < 30):
+            cached = self.analysis_cache[cache_key]
+            return cached['results'], cached['progresses'], cached['percentages']
+        
+        # Análisis normal (código existente)
+        results, progresses, percentages = self.analyze_symbol(symbol)
+        
+        # Guardar en cache
+        self.analysis_cache[cache_key] = {
+            'results': results,
+            'progresses': progresses, 
+            'percentages': percentages,
+            'timestamp': current_time
+        }
+        
+        return results, progresses, percentages
+
+    def run_bot_precise_timing_optimized(self):
+        """Bucle principal OPTIMIZADO - VERSIÓN URGENTE"""
+        # ✅ RESETEO INICIAL
+        self.next_update_time = datetime.now() + timedelta(seconds=UPDATE_INTERVAL)
+        
         while self.running:
             try:
                 current_time = datetime.now()
                 
-                # Solo ejecutar si es tiempo de actualizar (sincronizado con reloj)
                 if current_time >= self.next_update_time:
                     execution_start = datetime.now()
                     self.counter += 1
                     
-                    # Calcular tiempo de la próxima actualización
-                    self.next_update_time = (execution_start + timedelta(seconds=UPDATE_INTERVAL)).replace(microsecond=0)
+                    # ✅ CALCULAR PRÓXIMO UPDATE ANTES DE EJECUTAR
+                    self.next_update_time = execution_start + timedelta(seconds=UPDATE_INTERVAL)
                     
                     # Update interface header inmediatamente
                     if self.gui:
                         self.gui.root.after(0, self.gui.update_display_header)
                     
-                    # Only show every 10 executions to avoid log spam
-                    if self.counter % 10 == 1:
+                    # Log reducido en modo test
+                    if self.counter % 20 == 1:  # Cada 20 ejecuciones en test
                         self.log_message(f"\n{'='*80}", 'INFO')
                         self.log_message(f"🔄 EXECUTION #{self.counter} - {execution_start.strftime('%H:%M:%S.%f')[:-3]}", 'INFO')
+                        if not TRADING_ENABLED:
+                            self.log_message("🔒 MODO TEST - Operaciones bloqueadas", 'TEST_MODE')
                     
-                    # Analyze all symbols
-                    all_results = {}
-                    all_progresses = {}
-                    all_signals = {}
-                    all_prices = {}
+                    # ✅ DEBUG EXTREMO - IDENTIFICAR CUELOS DE BOTELLA
+                    debug_start = time.time()
+                    
+                    # 1. Timing de precios
+                    price_start = time.time()
+                    all_prices = self.get_all_prices_bulk_optimized()
+                    price_time = time.time() - price_start
+                    
+                    # 2. Timing de análisis
+                    analysis_start = time.time()
+                    all_results, all_progresses, all_signals = {}, {}, {}
                     all_percentages = {}
                     
-                    # Obtener TODOS los precios de una vez (más rápido)
-                    all_prices = self.get_all_prices_bulk()
+                    if len(SYMBOLS) > 2:  # Solo paralelizar si hay suficientes símbolos
+                        all_results, all_progresses, all_percentages = self.analyze_all_symbols_parallel()
+                    else:
+                        # Análisis secuencial para pocos símbolos
+                        for symbol in SYMBOLS:
+                            results, progresses, percentages = self.analyze_symbol_optimized(symbol)
+                            signal = self.generate_trading_signal(results, symbol)
+                            
+                            all_results[symbol] = results
+                            all_progresses[symbol] = progresses
+                            all_signals[symbol] = signal
+                            all_percentages[symbol] = percentages
                     
+                    # Generar señales para símbolos analizados en paralelo
                     for symbol in SYMBOLS:
-                        # Only detailed log every 10 executions
-                        if self.counter % 10 == 1:
-                            self.log_message(f"\n🔍 Analyzing {symbol}...", symbol.replace('USDC', ''))
-                        
-                        current_price = all_prices.get(symbol, 0.0)
-                        
-                        results, progresses, percentages = self.analyze_symbol(symbol)
-                        signal = self.generate_trading_signal(results, symbol)
-                        
-                        all_results[symbol] = results
-                        all_progresses[symbol] = progresses
-                        all_signals[symbol] = signal
-                        all_percentages[symbol] = percentages
+                        if symbol not in all_signals:  # Si no se generó en paralelo
+                            all_signals[symbol] = self.generate_trading_signal(all_results.get(symbol, {}), symbol)
                     
-                    # Update results in interface (ALWAYS)
+                    analysis_time = time.time() - analysis_start
+                    
+                    # Guardar análisis actual para uso externo
+                    self.current_analysis = all_results
+                    
+                    # 3. Timing de GUI
+                    gui_start = time.time()
+                    # Update results in interface
                     if self.gui:
-                        self.gui.root.after(0, lambda: self.gui.update_all_results(all_results, all_progresses, all_signals, all_prices, all_percentages))
+                        self.gui.root.after(0, lambda: self.gui.update_all_results(
+                            all_results, all_progresses, all_signals, all_prices, all_percentages
+                        ))
+                    gui_time = time.time() - gui_start
                     
-                    # Generate general summary (only log every 10 executions)
+                    # Mostrar breakdown de timing
                     if self.counter % 10 == 1:
-                        self.generate_general_summary(all_signals)
+                        total_time = time.time() - debug_start
+                        self.log_message(f"🔍 DEBUG TIMING: Precios: {price_time:.2f}s, Análisis: {analysis_time:.2f}s, GUI: {gui_time:.2f}s, Total: {total_time:.2f}s", 'TIMING')
                     
-                    # REBALANCE PORTFOLIO - ejecutar en cada ciclo para detectar cambios inmediatos
-                    if self.counter % 3 == 0:  # Cada 6 segundos verificar cambios (ajustado por nuevo intervalo)
+                    # ✅ REBALANCEO SELECTIVO (solo si hay cambios significativos)
+                    should_rebalance = (
+                        self.counter % 5 == 0 or  # Cada 10 segundos
+                        any(self.capital_manager.has_signal_changed(symbol, 
+                             self.capital_manager.calculate_signal_weight(all_results.get(symbol, {})), 
+                             0.15) for symbol in SYMBOLS)
+                    )
+                    
+                    if should_rebalance:
+                        rebalance_start = time.time()
                         success, message = self.capital_manager.rebalance_portfolio(all_results, all_prices)
+                        rebalance_time = time.time() - rebalance_start
                         if success and "Rebalanceados" in message:
-                            self.log_message(f"⚖️ {message}", 'TRADE')
+                            self.log_message(f"⚖️ {message} ({rebalance_time:.2f}s)", 'TRADE')
                     
-                    # Mostrar estado del portfolio cada 30 ejecuciones (ajustado)
-                    if self.counter % 30 == 0:
+                    # Mostrar estado cada 60 ejecuciones en test (cada ~2min)
+                    if self.counter % 60 == 0 and not TRADING_ENABLED:
                         portfolio_status = self.capital_manager.get_portfolio_status()
-                        self.log_message(f"📊 Estado Portfolio:\n{portfolio_status}", 'INFO')
+                        self.log_message(f"📊 Estado Portfolio (TEST):\n{portfolio_status}", 'INFO')
                     
-                    # Calcular tiempo de ejecución y ajustar sleep
+                    # ✅ TIMING URGENTE - ELIMINAR COMPENSACIÓN COMPLEJA
                     execution_end = datetime.now()
                     execution_time = (execution_end - execution_start).total_seconds()
                     self.execution_times.append(execution_time)
                     
-                    # Calcular drift (cuánto nos pasamos del tiempo ideal)
-                    actual_next_time = datetime.now()
-                    drift = (actual_next_time - self.next_update_time).total_seconds()
+                    # ✅ SLEEP SIMPLE Y EFECTIVO
+                    sleep_time = max(0.1, UPDATE_INTERVAL - execution_time)
                     
-                    # Calcular sleep time dinámicamente
-                    sleep_time = max(0.01, UPDATE_INTERVAL - execution_time - drift)
+                    # ✅ RESETEO AGRESIVO DE DRIFT
+                    if execution_time > UPDATE_INTERVAL:
+                        # Si la ejecución fue más larga que el intervalo, resetear
+                        self.next_update_time = datetime.now() + timedelta(seconds=UPDATE_INTERVAL)
+                        sleep_time = 0.1
+                        self.log_message(f"🚨 OVERFLOW: Exec {execution_time:.2f}s > Interval {UPDATE_INTERVAL}s", 'ERROR')
                     
-                    # Actualizar display de timing
+                    # Update timing display
                     if self.gui:
-                        self.gui.root.after(0, lambda: self.gui.update_timing_display(execution_time, sleep_time, drift))
+                        self.gui.root.after(0, lambda: self.gui.update_timing_display(
+                            execution_time, sleep_time, 0.0  # Drift forzado a 0
+                        ))
                     
-                    # Log timing cada 30 ejecuciones para debugging
-                    if self.counter % 30 == 1 and len(self.execution_times) > 1:
-                        avg_time = sum(self.execution_times) / len(self.execution_times)
-                        max_time = max(self.execution_times)
-                        self.log_message(f"📊 TIMING STATS: Current: {execution_time:.3f}s, Avg: {avg_time:.3f}s, Max: {max_time:.3f}s", 'TIMING')
-                        self.log_message(f"⏱️ ADJUSTMENT: Sleep: {sleep_time:.3f}s, Drift: {drift:+.3f}s", 'TIMING')
+                    # ✅ LOG CADA 10 EJECUCIONES
+                    if self.counter % 10 == 1:
+                        avg_time = sum(self.execution_times[-10:]) / min(10, len(self.execution_times))
+                        self.log_message(f"⏱️ TIMING URGENTE: Exec: {execution_time:.2f}s, Avg: {avg_time:.2f}s, Sleep: {sleep_time:.2f}s", 'TIMING')
                     
-                    # Sleep preciso
+                    # Sleep simple
                     if sleep_time > 0:
                         time.sleep(sleep_time)
                 
                 else:
-                    # Esperar hasta el próximo intervalo con polling eficiente
+                    # Espera eficiente
                     time_until_next = (self.next_update_time - datetime.now()).total_seconds()
-                    if time_until_next > 0.1:
-                        time.sleep(0.1)  # Poll cada 100ms
-                    elif time_until_next > 0.01:
-                        time.sleep(0.01)  # Poll cada 10ms cuando está cerca
-                    # Si está muy cerca, continuar sin sleep
+                    if time_until_next > 0.5:
+                        time.sleep(0.1)
+                    elif time_until_next > 0.05:
+                        time.sleep(0.01)
                         
             except Exception as e:
                 self.log_message(f"❌ Error in main loop: {str(e)}", 'ERROR')
-                time.sleep(UPDATE_INTERVAL)  # En caso de error, esperar intervalo completo
+                time.sleep(UPDATE_INTERVAL)
 
     def get_real_time_data(self, symbol, timeframe):
         """Obtiene datos de Binance INCLUYENDO la vela actual en formación"""
