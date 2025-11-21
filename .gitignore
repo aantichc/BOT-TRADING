@@ -1,3 +1,6 @@
+# Datos de trading personales
+balance_history.json
+
 # Entorno virtual
 venv/
 .env/
