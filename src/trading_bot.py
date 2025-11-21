@@ -14,7 +14,6 @@ class TradingBot:
         self.gui = gui_instance  # Instancia de la GUI (puede ser None inicialmente)
         self.capital_manager = CapitalManager(gui_instance)  # Nuevo gestor de capital
         self.initialize_variables()
-        self.current_analysis = {}  # Nuevo: almacenar análisis actual
     
     def initialize_variables(self):
         """Inicializa variables de control"""
@@ -28,6 +27,62 @@ class TradingBot:
         self.next_update_time = None
         self.execution_times = []
         self.last_rebalance_time = None
+        self.candle_cache = {}  # Nuevo: cache de velas
+        self.cache_timeout = 30  # segundos
+
+    def get_all_prices_bulk(self):
+        """Obtiene todos los precios en una sola llamada a API"""
+        try:
+            if self.client is None:
+                return {}
+            
+            tickers = self.client.get_all_tickers()
+            price_dict = {}
+            for ticker in tickers:
+                if ticker['symbol'] in SYMBOLS:
+                    price_dict[ticker['symbol']] = float(ticker['price'])
+            return price_dict
+        except Exception as e:
+            self.log_message(f"❌ Error obteniendo precios bulk: {str(e)}", 'ERROR')
+            return {}
+
+    def debug_timing_breakdown(self):
+        """Identifica qué parte consume más tiempo"""
+        import time
+        
+        timing_data = {}
+        
+        # 1. Timing de obtener precios
+        start = time.time()
+        all_prices = self.get_all_prices_bulk()
+        timing_data['precios_bulk'] = time.time() - start
+        
+        # 2. Timing de análisis por símbolo
+        for symbol in SYMBOLS[:2]:  # Probar con 2 símbolos
+            start = time.time()
+            results, progresses, percentages = self.analyze_symbol(symbol)
+            timing_data[f'analisis_{symbol}'] = time.time() - start
+        
+        # Mostrar resultados
+        self.log_message("🔍 DIAGNÓSTICO TIMING:", 'INFO')
+        for operation, duration in timing_data.items():
+            self.log_message(f"   {operation}: {duration:.3f}s", 'INFO')
+        
+        return timing_data
+
+    def get_cached_klines(self, symbol, timeframe):
+        """Cachea velas para evitar llamadas repetidas a API"""
+        cache_key = f"{symbol}_{timeframe}"
+        
+        if cache_key in self.candle_cache:
+            cache_time, data = self.candle_cache[cache_key]
+            if (datetime.now() - cache_time).seconds < self.cache_timeout:
+                return data
+        
+        # Si no hay cache o expiró, obtener datos frescos
+        fresh_data = self.get_real_time_data(symbol, timeframe)
+        self.candle_cache[cache_key] = (datetime.now(), fresh_data)
+        return fresh_data
 
     def setup_binance_client(self):
         """Configura el cliente de Binance"""
@@ -86,19 +141,20 @@ class TradingBot:
             if self.client is None:
                 self.setup_binance_client()
             
+            # 🧪 EJECUTAR DIAGNÓSTICO ANTES DE INICIAR
+            self.debug_timing_breakdown()
+            
             self.running = True
             if self.gui:
                 self.gui.update_bot_status(True)
             
             # Inicializar timing
             self.last_update_time = datetime.now()
-            self.next_update_time = (self.last_update_time + timedelta(seconds=1)).replace(microsecond=0)
+            self.next_update_time = (self.last_update_time + timedelta(seconds=UPDATE_INTERVAL)).replace(microsecond=0)
             self.execution_times = []
             
-            self.log_message("🤖 Bot started - Showing PRICE + % CANDLE MOVEMENT", 'INFO')
-            self.log_message("⏰ PRECISE TIMING: Updating EVERY SECOND synchronized with system clock", 'INFO')
+            self.log_message(f"🤖 Bot started - Update interval: {UPDATE_INTERVAL}s", 'INFO')
             self.log_message("💰 Live prices + % movement by timeframe", 'INFO')
-            self.log_message("📊 Timing statistics will be shown every 30 executions", 'INFO')
             self.log_message("⚖️ Capital management ENABLED - Rebalancing on signal changes", 'SUCCESS')
             
             # Start bot loop in separate thread
@@ -122,18 +178,18 @@ class TradingBot:
             self.log_message(f"⏹️ Bot stopped. Total executions: {self.counter}", 'INFO')
     
     def run_bot_precise_timing(self):
-        """Bucle principal del bot con timing preciso de 1 segundo"""
+        """Bucle principal del bot con timing preciso"""
         while self.running:
             try:
                 current_time = datetime.now()
                 
-                # Solo ejecutar si es tiempo de actualizar (sincronizado con segundos del reloj)
+                # Solo ejecutar si es tiempo de actualizar (sincronizado con reloj)
                 if current_time >= self.next_update_time:
                     execution_start = datetime.now()
                     self.counter += 1
                     
-                    # Calcular tiempo de la próxima actualización (próximo segundo exacto)
-                    self.next_update_time = (execution_start + timedelta(seconds=1)).replace(microsecond=0)
+                    # Calcular tiempo de la próxima actualización
+                    self.next_update_time = (execution_start + timedelta(seconds=UPDATE_INTERVAL)).replace(microsecond=0)
                     
                     # Update interface header inmediatamente
                     if self.gui:
@@ -151,14 +207,15 @@ class TradingBot:
                     all_prices = {}
                     all_percentages = {}
                     
+                    # Obtener TODOS los precios de una vez (más rápido)
+                    all_prices = self.get_all_prices_bulk()
+                    
                     for symbol in SYMBOLS:
                         # Only detailed log every 10 executions
                         if self.counter % 10 == 1:
-                            self.log_message(f"\n🔍 Analyzing {symbol}...", symbol.replace('USDT', ''))
+                            self.log_message(f"\n🔍 Analyzing {symbol}...", symbol.replace('USDC', ''))
                         
-                        # Get current price
-                        current_price = self.get_current_price(symbol)
-                        all_prices[symbol] = current_price
+                        current_price = all_prices.get(symbol, 0.0)
                         
                         results, progresses, percentages = self.analyze_symbol(symbol)
                         signal = self.generate_trading_signal(results, symbol)
@@ -177,13 +234,13 @@ class TradingBot:
                         self.generate_general_summary(all_signals)
                     
                     # REBALANCE PORTFOLIO - ejecutar en cada ciclo para detectar cambios inmediatos
-                    if self.counter % 5 == 0:  # Cada 5 segundos verificar cambios
+                    if self.counter % 3 == 0:  # Cada 6 segundos verificar cambios (ajustado por nuevo intervalo)
                         success, message = self.capital_manager.rebalance_portfolio(all_results, all_prices)
                         if success and "Rebalanceados" in message:
                             self.log_message(f"⚖️ {message}", 'TRADE')
                     
-                    # Mostrar estado del portfolio cada 60 ejecuciones
-                    if self.counter % 60 == 0:
+                    # Mostrar estado del portfolio cada 30 ejecuciones (ajustado)
+                    if self.counter % 30 == 0:
                         portfolio_status = self.capital_manager.get_portfolio_status()
                         self.log_message(f"📊 Estado Portfolio:\n{portfolio_status}", 'INFO')
                     
@@ -197,7 +254,7 @@ class TradingBot:
                     drift = (actual_next_time - self.next_update_time).total_seconds()
                     
                     # Calcular sleep time dinámicamente
-                    sleep_time = max(0.01, 1.0 - execution_time - drift)
+                    sleep_time = max(0.01, UPDATE_INTERVAL - execution_time - drift)
                     
                     # Actualizar display de timing
                     if self.gui:
@@ -215,7 +272,7 @@ class TradingBot:
                         time.sleep(sleep_time)
                 
                 else:
-                    # Esperar hasta el próximo segundo con polling eficiente
+                    # Esperar hasta el próximo intervalo con polling eficiente
                     time_until_next = (self.next_update_time - datetime.now()).total_seconds()
                     if time_until_next > 0.1:
                         time.sleep(0.1)  # Poll cada 100ms
@@ -225,7 +282,7 @@ class TradingBot:
                         
             except Exception as e:
                 self.log_message(f"❌ Error in main loop: {str(e)}", 'ERROR')
-                time.sleep(1)  # En caso de error, esperar 1 segundo
+                time.sleep(UPDATE_INTERVAL)  # En caso de error, esperar intervalo completo
 
     def get_real_time_data(self, symbol, timeframe):
         """Obtiene datos de Binance INCLUYENDO la vela actual en formación"""
@@ -295,7 +352,7 @@ class TradingBot:
 
     def analyze_symbol(self, symbol):
         """Analiza un símbolo específico usando Heikin Ashi"""
-        symbol_short = symbol.replace('USDT', '')
+        symbol_short = symbol.replace('USDC', '')
         
         # Solo log detallado cada 10 ejecuciones para evitar spam
         if self.counter % 10 == 1:
@@ -312,7 +369,8 @@ class TradingBot:
                 if self.counter % 10 == 1:
                     self.log_message(f"Analyzing {name}...", symbol_short)
                 
-                df = self.get_real_time_data(symbol, tf)
+                # Usar cache de velas para optimizar
+                df = self.get_cached_klines(symbol, tf)
                 
                 if len(df) < LENGTH:
                     color = f"ERROR: Only {len(df)} candles"
@@ -357,9 +415,6 @@ class TradingBot:
             for tf, progress in progresses.items():
                 self.log_message(f"  {tf.upper():>4} → {progress}", symbol_short)
         
-        # Almacenar resultados para acceso externo
-        self.current_analysis[symbol] = results
-
         return results, progresses, percentages
 
     def generate_trading_signal(self, results, symbol):
@@ -367,7 +422,7 @@ class TradingBot:
         greens = sum(1 for c in results.values() if "GREEN" in c)
         reds = sum(1 for c in results.values() if "RED" in c)
         
-        symbol_short = symbol.replace('USDT', '')
+        symbol_short = symbol.replace('USDC', '')
         
         # Only log every 10 executions to avoid spam
         if self.counter % 10 == 1:

@@ -5,7 +5,7 @@ API_SECRET = "yAseWTGu6vFlPKyIGkhttip23lcLVsvnybOgflFSt23EE1RjVg0mzdtTE84DBVNY"
 # Símbolos en USDC
 SYMBOLS = ["BTCUSDC", "FETUSDC", "SOLUSDC", "XLMUSDC", "LINKUSDC"]
 LENGTH = 8
-UPDATE_INTERVAL = 1  # 1 segundo
+UPDATE_INTERVAL = 2  # 1 segundo
 
 TIMEFRAMES = {
     "30m": "30m",
