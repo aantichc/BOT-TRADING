@@ -269,30 +269,7 @@ class TradingBotGUI:
         # Configure equal width for symbol columns
         for i in range(len(SYMBOLS)):
             trading_frame.columnconfigure(i, weight=1)
-        
-        # General summary
-        summary_frame = tk.Frame(trading_frame, 
-                                bg=DARK_FRAME, 
-                                relief='ridge', 
-                                bd=1,
-                                highlightbackground=BORDER_COLOR,
-                                highlightthickness=1)
-        summary_frame.grid(row=1, column=0, columnspan=len(SYMBOLS), sticky=(tk.W, tk.E), pady=(10, 10))
-        
-        summary_title = tk.Label(summary_frame, 
-                                text="🎯 GENERAL SUMMARY", 
-                                font=('Arial', 11, 'bold'),
-                                fg=GOLD,
-                                bg=DARK_FRAME)
-        summary_title.pack(pady=(5, 0))
-        
-        self.summary_label = tk.Label(summary_frame, 
-                                    text="--", 
-                                    font=('Arial', 12, 'bold'),
-                                    fg=TEXT_LIGHT,
-                                    bg=DARK_FRAME)
-        self.summary_label.pack(pady=(0, 5))
-        
+
         # ============ NUEVA GRÁFICA DE BALANCE ============
         chart_frame = tk.Frame(trading_frame, 
                             bg=DARK_FRAME, 

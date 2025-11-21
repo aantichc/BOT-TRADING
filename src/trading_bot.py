@@ -585,16 +585,3 @@ class TradingBot:
             if self.counter % 10 == 1:
                 self.log_message(f"⚡ {symbol_short} - UNDECIDED MARKET - Mixed signals", 'WARNING')
             return "CONSOLIDATION ⚡"
-
-    def generate_general_summary(self, all_signals):
-        """Genera un resumen general de todas las señales"""
-        strong_buys = sum(1 for s in all_signals.values() if "STRONG_BUY" in s)
-        strong_sells = sum(1 for s in all_signals.values() if "STRONG_SELL" in s)
-        bullish = sum(1 for s in all_signals.values() if "BULLISH" in s)
-        bearish = sum(1 for s in all_signals.values() if "BEARISH" in s)
-        
-        summary = f"📈 BUYS: {strong_buys} | 📉 SELLS: {strong_sells} | 🟢 BULLISH: {bullish} | 🔻 BEARISH: {bearish}"
-        
-        if self.gui:
-            self.gui.summary_label.config(text=summary)
-        self.log_message(f"🎯 GENERAL SUMMARY: {summary}", 'INFO')
