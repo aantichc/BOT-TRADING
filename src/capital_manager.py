@@ -27,10 +27,20 @@ class CapitalManager:
             self.last_signal_weights[symbol] = 0.0  # Inicialmente neutral
     
     def log_message(self, message, tag=None):
-        """Método de log que usa la GUI si está disponible"""
-        if self.gui:
-            self.gui.log_message(message, tag)
+        """Método de log que envía TRADES al GUI y el resto a consola"""
+        
+        # ✅ TRADES que SÍ van al GUI
+        trade_messages = ['💰 COMPRA', '💰 VENTA', '💸 VENTA', '⚖️ REBALANCE']
+        is_trade = any(trade_msg in message for trade_msg in trade_messages)
+        
+        if is_trade:
+            # Los trades VAN AL GUI
+            if self.gui:
+                self.gui.log_message(message, tag)
+            else:
+                print(f"[CapitalManager] {message}")
         else:
+            # Todo lo demás SOLO A CONSOLA
             print(f"[CapitalManager] {message}")
     
     def calculate_signal_weight(self, timeframe_results):

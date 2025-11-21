@@ -483,7 +483,6 @@ class TradingBotGUI:
 
     def on_timeframe_changed(self, selected_timeframe):
         """Cuando se cambia el timeframe de la gráfica"""
-        self.log_message(f"📊 Cambiando gráfica a timeframe: {selected_timeframe}", 'INFO')
         self.refresh_chart()
 
     def refresh_chart(self):

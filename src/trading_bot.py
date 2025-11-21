@@ -33,6 +33,15 @@ class TradingBot:
         self.last_rebalance_time = None
         self.candle_cache = {}  # Cache de velas
         self.current_analysis = {}  # Para almacenar análisis recientes
+        self.signal_categories = {
+        "STRONG_BUY 🚀": 4,
+        "BULLISH_TREND 📈": 3, 
+        "CAUTIOUS_BULLISH 🟡": 2,
+        "CONSOLIDATION ⚡": 1,
+        "CAUTIOUS_BEARISH 🟡": 2,
+        "BEARISH_TREND 📉": 3,
+        "STRONG_SELL 🔻": 4
+    }
 
     def setup_optimized_cache(self):
         """Configura cache más agresivo para modo test"""
@@ -171,11 +180,19 @@ class TradingBot:
             return 0.0
 
     def log_message(self, message, tag=None):
-        """Método de log que usa la GUI si está disponible"""
-        if self.gui:
-            self.gui.log_message(message, tag)
+        """Método de log ESTRICTO - SOLO trades al GUI"""
+        
+        # ✅ SOLO estos mensajes van al GUI
+        gui_messages = ['💰 COMPRA', '💰 VENTA', '💸 VENTA', '⚖️ REBALANCE', '💸 SELL ALL']
+        show_in_gui = any(msg in message for msg in gui_messages)
+        
+        if show_in_gui:
+            # Solo trades van al GUI
+            if self.gui:
+                self.gui.log_message(message, tag)
         else:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}")
+            # Todo lo demás SOLO a consola (incluyendo errores)
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}") 
 
     def start_bot(self):
         """Inicia el bot en un hilo separado"""
@@ -459,21 +476,28 @@ class TradingBot:
                 percentages[name] = 0.0
         
         return results, progresses, percentages
-
+    
     def generate_trading_signal(self, results, symbol):
-        """Solo log cuando hay cambio significativo"""
+        """Con HYSTERESIS para evitar logs por oscilación"""
         symbol_short = symbol.replace('USDC', '')
         
         greens = sum(1 for c in results.values() if "GREEN" in c)
-        yellows = sum(1 for c in results.values() if "YELLOW" in c)
+        yellows = sum(1 for c in results.values() if "YELLOW" in c) 
         reds = sum(1 for c in results.values() if "RED" in c)
         
         current_signal = self.get_signal_from_components(greens, yellows, reds)
         last_signal = self.capital_manager.last_signals.get(symbol, "")
         
-        # ✅ SOLO LOG SI HAY CAMBIO DE SEÑAL
-        if current_signal != last_signal:
+        # ✅ HYSTERESIS: Solo loguear si el cambio es entre categorías DIFERENTES
+        current_cat = self.signal_categories.get(current_signal, 0)
+        last_cat = self.signal_categories.get(last_signal, 0)
+        
+        # Solo loguear si hay cambio de categoría (no solo oscilación entre misma categoría)
+        if current_signal != last_signal and abs(current_cat - last_cat) >= 1:
             self.log_message(f"🔄 {symbol_short}: {last_signal} → {current_signal}", 'INFO')
+        
+        # Actualizar última señal SIEMPRE (para tracking interno)
+        self.capital_manager.last_signals[symbol] = current_signal
         
         return current_signal
     
