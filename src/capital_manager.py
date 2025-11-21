@@ -34,23 +34,23 @@ class CapitalManager:
             print(f"[CapitalManager] {message}")
     
     def calculate_signal_weight(self, timeframe_results):
-        """Calcula el peso de la señal basado en los timeframes - 30%/30%/40%"""
-        # Pesos de cada timeframe para decidir CUÁNTO INVERTIR del capital asignado a este token
+        """Calcula el peso de la señal basado en los timeframes - VERSIÓN BINARIA"""
         timeframe_weights = {
-            "30m": 0.30,  # 30% del capital asignado a este token
-            "1h": 0.30,   # 30% del capital asignado a este token  
-            "2h": 0.40    # 40% del capital asignado a este token
+            "30m": 0.30,
+            "1h": 0.30,  
+            "2h": 0.40
         }
         
         total_weight = 0.0
         
         for tf_name, signal in timeframe_results.items():
+            weight = timeframe_weights.get(tf_name, 0.0)
+            
             if "GREEN" in signal:
-                total_weight += timeframe_weights.get(tf_name, 0.0)
-            elif "RED" in signal:
-                total_weight -= timeframe_weights.get(tf_name, 0.0)
+                total_weight += weight  # SOLO SUMAR si es GREEN
+            # RED no suma nada
         
-        return total_weight
+        return total_weight  # Ej: 0.0, 0.3, 0.6, 0.7, 1.0
     
     def has_signal_changed(self, symbol, current_signal_weight, threshold=0.1):
         """Determina si la señal de un símbolo específico ha cambiado significativamente"""
@@ -81,13 +81,13 @@ class CapitalManager:
             return "CONSOLIDATION ⚡"
     
     def calculate_investment_percentage(self, signal_weight):
-        """Calcula qué porcentaje del capital asignado a este token debe estar invertido"""
-        # signal_weight va de -1 a +1
-        # Queremos mapear: -1 → 0%, 0 → 50%, +1 → 100%
-        investment_pct = (signal_weight + 1) / 2  # Normalizar a 0-1
+        """Calcula qué porcentaje del capital asignado a este token debe estar invertido - VERSIÓN SIMPLE"""
+        # signal_weight YA es la suma directa de los pesos activos
+        # Ejemplo: solo 30min GREEN → 0.30 = 30%
+        # Ejemplo: todas GREEN → 1.00 = 100%
         
-        # Limitar entre 10% y 90% para evitar extremos
-        investment_pct = max(0.1, min(0.9, investment_pct))
+        # Solo limitar entre 0% y 100%
+        investment_pct = max(0.0, min(1.0, signal_weight))
         
         return investment_pct
     
@@ -180,19 +180,13 @@ class CapitalManager:
             self.log_message(f"❌ Error en configuración inicial: {str(e)}", 'ERROR')
             return False, f"Error en setup inicial: {str(e)}"
 
-    def rebalance_symbol(self, symbol, symbol_signals, current_price, total_usd):
-        """Rebalancea un símbolo individual si sus señales han cambiado"""
+    def rebalance_symbol(self, symbol, symbol_signals, current_price, total_usd, manual_rebalance=False):
+        """Rebalancea un símbolo individual - VERSIÓN BINARIA INMEDIATA"""
         try:
-            # Calcular peso actual de la señal
+            # Calcular peso actual de la señal (BINARIO por timeframe)
             current_signal_weight = self.calculate_signal_weight(symbol_signals)
             
-            # Verificar si la señal ha cambiado significativamente
-            signal_changed = self.has_signal_changed(symbol, current_signal_weight, threshold=0.1)
-            
-            if not signal_changed:
-                return None  # No rebalancear este símbolo
-            
-            # Calcular nueva asignación objetivo
+            # Calcular nueva asignación objetivo BASADA EN SEÑALES ACTUALES
             target_allocation_pct = self.calculate_target_allocation(symbol, current_signal_weight, total_usd)
             target_usd = total_usd * target_allocation_pct
             
@@ -203,8 +197,36 @@ class CapitalManager:
             # Calcular diferencia
             difference_usd = target_usd - current_usd
             
-            # Ejecutar orden si la diferencia es significativa (> $20)
-            if abs(difference_usd) > 20:
+            # UMBRAL DINÁMICO: Más sensible en modo manual
+            min_amount = 5.0 if manual_rebalance else 20.0
+            
+            # DEBUG DETALLADO
+            if manual_rebalance or abs(difference_usd) > min_amount:
+                base_allocation = self.symbol_base_allocations.get(symbol, 0) * 100
+                investment_pct = self.calculate_investment_percentage(current_signal_weight) * 100
+                signal_desc = self.get_signal_from_weight(current_signal_weight)
+                
+                # Mostrar desglose por timeframe
+                timeframe_breakdown = []
+                for tf_name, signal in symbol_signals.items():
+                    weight = 0.30 if tf_name in ["30m", "1h"] else 0.40
+                    contribution = weight if "GREEN" in signal else 0.0
+                    timeframe_breakdown.append(f"{tf_name}: {signal} ({contribution*100:.0f}%)")
+                
+                self.log_message(
+                    f"🔍 {symbol} - Análisis:\n"
+                    f"   📊 Asignación base: {base_allocation:.1f}%\n"
+                    f"   🎯 Señal actual: {signal_desc} (peso: {current_signal_weight:.2f})\n"
+                    f"   📈 Timeframes: {', '.join(timeframe_breakdown)}\n"
+                    f"   💰 Posición actual: ${current_usd:.2f}\n"
+                    f"   🎯 Objetivo actual: ${target_usd:.2f}\n"
+                    f"   📉 Diferencia: ${difference_usd:+.2f}\n"
+                    f"   ⚡ Inversión: {investment_pct:.1f}% del capital asignado",
+                    'INFO'
+                )
+            
+            # Ejecutar orden si la diferencia es significativa
+            if abs(difference_usd) > min_amount:
                 if difference_usd > 0:
                     # COMPRAR - usar más del capital asignado a este token
                     success, message = self.account.buy_market(symbol, difference_usd)
@@ -214,6 +236,11 @@ class CapitalManager:
                         # Actualizar asignación actual
                         self.current_allocations[symbol] = target_allocation_pct
                         self.last_signals[symbol] = self.get_signal_from_weight(current_signal_weight)
+                        self.last_signal_weights[symbol] = current_signal_weight
+                        
+                        # LOG ESPECÍFICO PARA MODO MANUAL
+                        if manual_rebalance:
+                            self.log_message(f"🎯 ASIGNACIÓN ACTUALIZADA: {symbol} = {target_allocation_pct*100:.1f}%", 'SUCCESS')
                     else:
                         result = f"❌ COMPRA {symbol} fallida: {message}"
                         self.log_message(f"❌ COMPRA {symbol} fallida: {message}", 'ERROR')
@@ -230,6 +257,11 @@ class CapitalManager:
                         # Actualizar asignación actual
                         self.current_allocations[symbol] = target_allocation_pct
                         self.last_signals[symbol] = self.get_signal_from_weight(current_signal_weight)
+                        self.last_signal_weights[symbol] = current_signal_weight
+                        
+                        # LOG ESPECÍFICO PARA MODO MANUAL
+                        if manual_rebalance:
+                            self.log_message(f"🎯 ASIGNACIÓN ACTUALIZADA: {symbol} = {target_allocation_pct*100:.1f}%", 'SUCCESS')
                     else:
                         result = f"❌ VENTA {symbol} fallida: {message}"
                         self.log_message(f"❌ VENTA {symbol} fallida: {message}", 'ERROR')
@@ -241,15 +273,26 @@ class CapitalManager:
             else:
                 # Diferencia muy pequeña, solo actualizar señal
                 self.last_signals[symbol] = self.get_signal_from_weight(current_signal_weight)
-                return f"⚡ {symbol}: Señal cambió pero diferencia muy pequeña (${difference_usd:.2f})"
+                self.last_signal_weights[symbol] = current_signal_weight
                 
+                if manual_rebalance:
+                    # En modo manual, informar incluso si no hay acción
+                    return f"⚡ {symbol}: Diferencia mínima (${difference_usd:.2f}) - Umbral: ${min_amount:.2f}"
+                else:
+                    return None  # No action needed
+                    
         except Exception as e:
             error_msg = f"❌ Error rebalanceando {symbol}: {str(e)}"
             self.log_message(error_msg, 'ERROR')
+            
+            # Información adicional para debugging en modo manual
+            if manual_rebalance:
+                self.log_message(f"🔧 DEBUG {symbol}: Señal={symbol_signals}, Precio={current_price}, TotalUSD={total_usd}", 'ERROR')
+            
             return error_msg
-    
-    def rebalance_portfolio(self, all_signals, all_prices):
-        """Reequilibra solo los símbolos cuyas señales han cambiado"""
+
+    def rebalance_portfolio(self, all_signals, all_prices, manual_rebalance=False):
+        """Reequilibra el portfolio - AHORA CON MODO MANUAL"""
         try:
             # PRIMERO: Manejar configuración inicial si no se ha hecho
             if not self.initial_setup_done:
@@ -271,18 +314,20 @@ class CapitalManager:
                 if not symbol_signals or current_price == 0:
                     continue
                 
-                # Rebalancear este símbolo individualmente si sus señales cambiaron
-                result = self.rebalance_symbol(symbol, symbol_signals, current_price, total_usd)
+                # Rebalancear este símbolo individualmente
+                result = self.rebalance_symbol(symbol, symbol_signals, current_price, total_usd, manual_rebalance)
                 
                 if result:
                     rebalance_actions.append(result)
                     symbols_rebalanced += 1
             
             if rebalance_actions:
-                summary = f"Rebalanceados {symbols_rebalanced} símbolos: " + " | ".join(rebalance_actions)
+                mode = "MANUAL" if manual_rebalance else "AUTO"
+                summary = f"[{mode}] Rebalanceados {symbols_rebalanced} símbolos: " + " | ".join(rebalance_actions)
                 return True, summary
             else:
-                return True, "No se requirieron ajustes - señales estables"
+                mode = "MANUAL" if manual_rebalance else "AUTO"
+                return True, f"[{mode}] No se requirieron ajustes"
                 
         except Exception as e:
             return False, f"Error en rebalanceo: {str(e)}"

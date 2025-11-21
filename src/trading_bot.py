@@ -14,6 +14,7 @@ class TradingBot:
         self.gui = gui_instance  # Instancia de la GUI (puede ser None inicialmente)
         self.capital_manager = CapitalManager(gui_instance)  # Nuevo gestor de capital
         self.initialize_variables()
+        self.current_analysis = {}  # Nuevo: almacenar análisis actual
     
     def initialize_variables(self):
         """Inicializa variables de control"""
@@ -356,6 +357,9 @@ class TradingBot:
             for tf, progress in progresses.items():
                 self.log_message(f"  {tf.upper():>4} → {progress}", symbol_short)
         
+        # Almacenar resultados para acceso externo
+        self.current_analysis[symbol] = results
+
         return results, progresses, percentages
 
     def generate_trading_signal(self, results, symbol):
