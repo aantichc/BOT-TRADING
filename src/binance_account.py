@@ -184,6 +184,8 @@ class BinanceAccount:
     
     def buy_market(self, symbol, usd_amount):
         """Compra una crypto con cantidad en USDC - VERSIÓN FINAL"""
+        if not TRADING_ENABLED:
+            return True, f"[TEST] Compra simulada: {symbol} - ${usd_amount:.2f}"
         try:
             if self.client is None:
                 return False, "Cliente no disponible"
@@ -248,6 +250,8 @@ class BinanceAccount:
     
     def sell_market(self, symbol, quantity):
         """Vende una crypto a precio de mercado - VERSIÓN USDC"""
+        if not TRADING_ENABLED:
+            return True, f"[TEST] Venta simulada: {symbol} - {quantity:.8f}"
         try:
             if self.client is None:
                 return False, "Cliente no disponible"

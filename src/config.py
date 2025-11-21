@@ -2,6 +2,9 @@
 API_KEY = "F9D9iYQqpiQvZ7FqSuaGugeN1I4QfnBTMnro1SGrga84PZeC7SpXFHiwqkWBkGlo"
 API_SECRET = "yAseWTGu6vFlPKyIGkhttip23lcLVsvnybOgflFSt23EE1RjVg0mzdtTE84DBVNY"
 
+# MODO TEST - BLOQUEAR OPERACIONES REALES
+TRADING_ENABLED = False  # Cambiar a True para operar realmente
+
 # Símbolos en USDC
 SYMBOLS = ["BTCUSDC", "FETUSDC", "SOLUSDC", "XLMUSDC", "LINKUSDC"]
 LENGTH = 8

@@ -68,7 +68,7 @@ class TradingBotGUI:
         
         # Guardar automáticamente
         self.save_balance_history()
-    
+
     def setup_ui(self):
         """Configura toda la interfaz gráfica con nuevas funcionalidades"""
         self.root.title("🤖 Trading Bot - Multiple Symbols (BINANCE) - HEIKIN ASHI")
@@ -90,18 +90,18 @@ class TradingBotGUI:
         
         # Title
         title_label = tk.Label(main_frame, 
-                              text="🤖 TRADING BOT - LIVE PRICE + CANDLE % MOVEMENT - HEIKIN ASHI", 
-                              font=('Arial', 16, 'bold'),
-                              fg=GOLD,
-                              bg=DARK_BG)
+                            text="🤖 TRADING BOT - LIVE PRICE + CANDLE % MOVEMENT - HEIKIN ASHI", 
+                            font=('Arial', 16, 'bold'),
+                            fg=GOLD,
+                            bg=DARK_BG)
         title_label.grid(row=0, column=0, columnspan=2, pady=(0, 15), sticky=tk.W+tk.E)
         
         # Subtitle
         subtitle_label = tk.Label(main_frame,
-                                 text="💰 LIVE PRICE | 📊 % CURRENT CANDLE MOVEMENT | 🕯️ HEIKIN ASHI | 💼 ACCOUNT INFO | 📈 BALANCE CHART",
-                                 font=('Arial', 10),
-                                 fg=TEXT_GRAY,
-                                 bg=DARK_BG)
+                                text="💰 LIVE PRICE | 📊 % CURRENT CANDLE MOVEMENT | 🕯️ HEIKIN ASHI | 💼 ACCOUNT INFO | 📈 BALANCE CHART",
+                                font=('Arial', 10),
+                                fg=TEXT_GRAY,
+                                bg=DARK_BG)
         subtitle_label.grid(row=1, column=0, columnspan=2, pady=(0, 20), sticky=tk.W+tk.E)
         
         # Control frame
@@ -110,17 +110,17 @@ class TradingBotGUI:
         
         # Control buttons - NUEVO BOTÓN SELL ALL
         self.start_button = tk.Button(control_frame, 
-                                     text="▶️ START BOT", 
-                                     command=self.start_bot,
-                                     font=('Arial', 12, 'bold'),
-                                     bg=GREEN,
-                                     fg=DARK_BG,
-                                     width=15,
-                                     height=2,
-                                     relief='flat',
-                                     bd=0,
-                                     activebackground='#00aa00',
-                                     activeforeground=DARK_BG)
+                                    text="▶️ START BOT", 
+                                    command=self.start_bot,
+                                    font=('Arial', 12, 'bold'),
+                                    bg=GREEN,
+                                    fg=DARK_BG,
+                                    width=15,
+                                    height=2,
+                                    relief='flat',
+                                    bd=0,
+                                    activebackground='#00aa00',
+                                    activeforeground=DARK_BG)
         self.start_button.pack(side=tk.LEFT, padx=(0, 10))
         
         self.stop_button = tk.Button(control_frame, 
@@ -134,23 +134,23 @@ class TradingBotGUI:
                                     state=tk.DISABLED,
                                     relief='flat',
                                     bd=0,
-                                     activebackground='#cc0000',
+                                    activebackground='#cc0000',
                                     activeforeground=DARK_BG)
         self.stop_button.pack(side=tk.LEFT, padx=(0, 10))
         
         # NUEVO BOTÓN SELL ALL
         self.sell_all_button = tk.Button(control_frame, 
-                                       text="💸 SELL ALL", 
-                                       command=self.sell_all_assets,
-                                       font=('Arial', 12, 'bold'),
-                                       bg=PURPLE,
-                                       fg=TEXT_LIGHT,
-                                       width=15,
-                                       height=2,
-                                       relief='flat',
-                                       bd=0,
-                                       activebackground='#9944ff',
-                                       activeforeground=TEXT_LIGHT)
+                                    text="💸 SELL ALL", 
+                                    command=self.sell_all_assets,
+                                    font=('Arial', 12, 'bold'),
+                                    bg=PURPLE,
+                                    fg=TEXT_LIGHT,
+                                    width=15,
+                                    height=2,
+                                    relief='flat',
+                                    bd=0,
+                                    activebackground='#9944ff',
+                                    activeforeground=TEXT_LIGHT)
         self.sell_all_button.pack(side=tk.LEFT, padx=(0, 10))
         
         # Bot status
@@ -163,11 +163,22 @@ class TradingBotGUI:
         
         # Timing info label
         self.timing_label = tk.Label(control_frame,
-                                   text="⏱️ Timing: --",
-                                   font=('Arial', 10),
-                                   fg=TEXT_GRAY,
-                                   bg=DARK_BG)
+                                text="⏱️ Timing: --",
+                                font=('Arial', 10),
+                                fg=TEXT_GRAY,
+                                bg=DARK_BG)
         self.timing_label.pack(side=tk.LEFT, padx=(20, 0))
+        
+        # ✅ NUEVO: Indicador de MODO TEST/LIVE
+        mode_text = "🔒 MODO TEST" if not TRADING_ENABLED else "🚀 MODO LIVE"
+        mode_color = YELLOW if not TRADING_ENABLED else GREEN
+        
+        self.mode_label = tk.Label(control_frame,
+                                text=mode_text,
+                                font=('Arial', 10, 'bold'),
+                                fg=mode_color,
+                                bg=DARK_BG)
+        self.mode_label.pack(side=tk.LEFT, padx=(20, 0))
         
         # ============ PANEL IZQUIERDO: BOT TRADING ============
         trading_frame = tk.Frame(main_frame, bg=DARK_BG)
@@ -177,36 +188,36 @@ class TradingBotGUI:
         self.symbol_frames = {}
         for i, symbol in enumerate(SYMBOLS):
             symbol_frame = tk.Frame(trading_frame, 
-                                   bg=DARK_FRAME, 
-                                   relief='ridge', 
-                                   bd=1,
-                                   highlightbackground=BORDER_COLOR,
-                                   highlightthickness=1)
+                                bg=DARK_FRAME, 
+                                relief='ridge', 
+                                bd=1,
+                                highlightbackground=BORDER_COLOR,
+                                highlightthickness=1)
             symbol_frame.grid(row=0, column=i, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5, pady=(0, 10))
             symbol_frame.columnconfigure(0, weight=1)
             
             # Symbol title
             title_label = tk.Label(symbol_frame, 
-                                  text=f"📊 {symbol}", 
-                                  font=('Arial', 12, 'bold'),
-                                  fg=GOLD,
-                                  bg=DARK_FRAME)
+                                text=f"📊 {symbol}", 
+                                font=('Arial', 12, 'bold'),
+                                fg=GOLD,
+                                bg=DARK_FRAME)
             title_label.grid(row=0, column=0, sticky=tk.W, pady=(10, 5), padx=10)
             
             # Current price
             price_label = tk.Label(symbol_frame, 
-                                  text="Price: --", 
-                                  font=('Arial', 11, 'bold'), 
-                                  fg=GOLD,
-                                  bg=DARK_FRAME)
+                                text="Price: --", 
+                                font=('Arial', 11, 'bold'), 
+                                fg=GOLD,
+                                bg=DARK_FRAME)
             price_label.grid(row=1, column=0, sticky=tk.W, pady=(0, 8), padx=10)
             
             # Symbol information
             time_label = tk.Label(symbol_frame, 
-                                 text="Time: --:--:--", 
-                                 font=('Arial', 9),
-                                 fg=TEXT_DARK_GRAY,
-                                 bg=DARK_FRAME)
+                                text="Time: --:--:--", 
+                                font=('Arial', 9),
+                                fg=TEXT_DARK_GRAY,
+                                bg=DARK_FRAME)
             time_label.grid(row=2, column=0, sticky=tk.W, pady=2, padx=10)
             
             # Results by timeframe
@@ -226,12 +237,12 @@ class TradingBotGUI:
             
             # Trading signal
             signal_label = tk.Label(symbol_frame, 
-                                   text="SIGNAL: --", 
-                                   font=('Arial', 11, 'bold'),
-                                   fg=TEXT_LIGHT,
-                                   bg=NEUTRAL_BG,
-                                   relief='raised',
-                                   bd=1)
+                                text="SIGNAL: --", 
+                                font=('Arial', 11, 'bold'),
+                                fg=TEXT_LIGHT,
+                                bg=NEUTRAL_BG,
+                                relief='raised',
+                                bd=1)
             signal_label.grid(row=row_idx, column=0, sticky=tk.W, pady=(8, 5), padx=10)
             row_idx += 1
             
@@ -276,35 +287,35 @@ class TradingBotGUI:
         summary_title.pack(pady=(5, 0))
         
         self.summary_label = tk.Label(summary_frame, 
-                                     text="--", 
-                                     font=('Arial', 12, 'bold'),
-                                     fg=TEXT_LIGHT,
-                                     bg=DARK_FRAME)
+                                    text="--", 
+                                    font=('Arial', 12, 'bold'),
+                                    fg=TEXT_LIGHT,
+                                    bg=DARK_FRAME)
         self.summary_label.pack(pady=(0, 5))
         
         # ============ NUEVA GRÁFICA DE BALANCE ============
         chart_frame = tk.Frame(trading_frame, 
-                              bg=DARK_FRAME, 
-                              relief='ridge', 
-                              bd=1,
-                              highlightbackground=BORDER_COLOR,
-                              highlightthickness=1)
+                            bg=DARK_FRAME, 
+                            relief='ridge', 
+                            bd=1,
+                            highlightbackground=BORDER_COLOR,
+                            highlightthickness=1)
         chart_frame.grid(row=2, column=0, columnspan=len(SYMBOLS), sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10, 10))
         chart_frame.columnconfigure(0, weight=1)
         chart_frame.rowconfigure(0, weight=1)
         
         chart_title = tk.Label(chart_frame, 
-                              text="📈 BALANCE HISTORY (USDC)", 
-                              font=('Arial', 11, 'bold'),
-                              fg=GOLD,
-                              bg=DARK_FRAME)
+                            text="📈 BALANCE HISTORY (USDC)", 
+                            font=('Arial', 11, 'bold'),
+                            fg=GOLD,
+                            bg=DARK_FRAME)
         chart_title.grid(row=0, column=0, sticky=tk.W, padx=10, pady=5)
         
         # Canvas para la gráfica simple (texto basado)
         self.chart_canvas = tk.Canvas(chart_frame, 
-                                     bg=DARKER_BG, 
-                                     height=120,
-                                     highlightthickness=0)
+                                    bg=DARKER_BG, 
+                                    height=120,
+                                    highlightthickness=0)
         self.chart_canvas.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=10, pady=(0, 10))
         
         # ============ PANEL DERECHO: INFORMACIÓN DE CUENTA ============
@@ -313,35 +324,35 @@ class TradingBotGUI:
         
         # Account info frame
         self.account_info_frame = tk.Frame(account_frame, 
-                                         bg=ACCOUNT_BG, 
-                                         relief='ridge', 
-                                         bd=2,
-                                         highlightbackground=PURPLE,
-                                         highlightthickness=1)
+                                        bg=ACCOUNT_BG, 
+                                        relief='ridge', 
+                                        bd=2,
+                                        highlightbackground=PURPLE,
+                                        highlightthickness=1)
         self.account_info_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
         # Account title
         account_title = tk.Label(self.account_info_frame, 
-                               text="💼 BINANCE ACCOUNT", 
-                               font=('Arial', 14, 'bold'),
-                               fg=PURPLE,
-                               bg=ACCOUNT_BG)
+                            text="💼 BINANCE ACCOUNT", 
+                            font=('Arial', 14, 'bold'),
+                            fg=PURPLE,
+                            bg=ACCOUNT_BG)
         account_title.pack(pady=(15, 10))
         
         # Total balance
         self.total_balance_label = tk.Label(self.account_info_frame, 
-                                          text="Total: $--", 
-                                          font=('Arial', 18, 'bold'),
-                                          fg=GOLD,
-                                          bg=ACCOUNT_BG)
+                                        text="Total: $--", 
+                                        font=('Arial', 18, 'bold'),
+                                        fg=GOLD,
+                                        bg=ACCOUNT_BG)
         self.total_balance_label.pack(pady=(0, 15))
         
         # Last update time
         self.account_update_label = tk.Label(self.account_info_frame, 
-                                           text="Last update: --", 
-                                           font=('Arial', 9),
-                                           fg=TEXT_GRAY,
-                                           bg=ACCOUNT_BG)
+                                        text="Last update: --", 
+                                        font=('Arial', 9),
+                                        fg=TEXT_GRAY,
+                                        bg=ACCOUNT_BG)
         self.account_update_label.pack(pady=(0, 10))
         
         # Balances details frame
@@ -350,13 +361,13 @@ class TradingBotGUI:
         
         # Scrollable text for balances
         self.balances_text = scrolledtext.ScrolledText(balances_frame, 
-                                                     height=8, 
-                                                     bg=DARKER_BG,
-                                                     fg=TEXT_LIGHT,
-                                                     font=('Consolas', 8),
-                                                     relief='flat',
-                                                     bd=0,
-                                                     wrap=tk.WORD)
+                                                    height=8, 
+                                                    bg=DARKER_BG,
+                                                    fg=TEXT_LIGHT,
+                                                    font=('Consolas', 8),
+                                                    relief='flat',
+                                                    bd=0,
+                                                    wrap=tk.WORD)
         self.balances_text.pack(fill=tk.BOTH, expand=True)
         self.balances_text.config(state=tk.DISABLED)
         
@@ -366,14 +377,14 @@ class TradingBotGUI:
         
         # Refresh account button
         refresh_button = tk.Button(account_buttons_frame, 
-                                 text="🔄 Refresh Account", 
-                                 command=self.refresh_account_info,
-                                 font=('Arial', 10, 'bold'),
-                                 bg=PURPLE,
-                                 fg=TEXT_LIGHT,
-                                 relief='flat',
-                                 bd=0,
-                                 width=15)
+                                text="🔄 Refresh Account", 
+                                command=self.refresh_account_info,
+                                font=('Arial', 10, 'bold'),
+                                bg=PURPLE,
+                                fg=TEXT_LIGHT,
+                                relief='flat',
+                                bd=0,
+                                width=15)
         refresh_button.pack(side=tk.LEFT, padx=(0, 10))
         
         # Manual rebalance button
@@ -409,14 +420,14 @@ class TradingBotGUI:
         
         # Scrollable text area
         self.log_text = scrolledtext.ScrolledText(console_frame, 
-                                                 height=8, 
-                                                 bg=DARKER_BG,
-                                                 fg=TEXT_LIGHT,
-                                                 font=('Consolas', 8),
-                                                 relief='flat',
-                                                 bd=0,
-                                                 insertbackground=TEXT_LIGHT,
-                                                 selectbackground=HIGHLIGHT_COLOR)
+                                                height=8, 
+                                                bg=DARKER_BG,
+                                                fg=TEXT_LIGHT,
+                                                font=('Consolas', 8),
+                                                relief='flat',
+                                                bd=0,
+                                                insertbackground=TEXT_LIGHT,
+                                                selectbackground=HIGHLIGHT_COLOR)
         self.log_text.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=10, pady=(0, 10))
         
         # Configure tags for log colors
@@ -435,6 +446,7 @@ class TradingBotGUI:
         self.log_text.tag_config('TIMING', foreground=TEXT_GRAY)
         self.log_text.tag_config('TRADE', foreground=PURPLE, font=('Consolas', 8, 'bold'))
         self.log_text.tag_config('SELL_ALL', foreground=RED, font=('Consolas', 8, 'bold'))
+        self.log_text.tag_config('TEST_MODE', foreground=YELLOW, font=('Consolas', 8, 'bold'))
 
     def setup_dark_theme(self):
         """Configura el tema oscuro globalmente"""

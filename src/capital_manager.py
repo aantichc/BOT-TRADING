@@ -181,12 +181,12 @@ class CapitalManager:
             return False, f"Error en setup inicial: {str(e)}"
 
     def rebalance_symbol(self, symbol, symbol_signals, current_price, total_usd, manual_rebalance=False):
-        """Rebalancea un símbolo individual - VERSIÓN BINARIA INMEDIATA"""
+        """Rebalancea un símbolo individual - CON MODO TEST"""
         try:
-            # Calcular peso actual de la señal (BINARIO por timeframe)
+            # Calcular peso actual de la señal
             current_signal_weight = self.calculate_signal_weight(symbol_signals)
             
-            # Calcular nueva asignación objetivo BASADA EN SEÑALES ACTUALES
+            # Calcular nueva asignación objetivo
             target_allocation_pct = self.calculate_target_allocation(symbol, current_signal_weight, total_usd)
             target_usd = total_usd * target_allocation_pct
             
@@ -197,11 +197,11 @@ class CapitalManager:
             # Calcular diferencia
             difference_usd = target_usd - current_usd
             
-            # UMBRAL DINÁMICO: Más sensible en modo manual
+            # UMBRAL DINÁMICO
             min_amount = 5.0 if manual_rebalance else 20.0
             
-            # DEBUG DETALLADO
-            if manual_rebalance or abs(difference_usd) > min_amount:
+            # DEBUG DETALLADO (siempre mostrar en modo test)
+            if manual_rebalance or abs(difference_usd) > min_amount or not TRADING_ENABLED:
                 base_allocation = self.symbol_base_allocations.get(symbol, 0) * 100
                 investment_pct = self.calculate_investment_percentage(current_signal_weight) * 100
                 signal_desc = self.get_signal_from_weight(current_signal_weight)
@@ -225,7 +225,16 @@ class CapitalManager:
                     'INFO'
                 )
             
-            # Ejecutar orden si la diferencia es significativa
+            # ✅ BLOQUEAR OPERACIONES EN MODO TEST
+            if not TRADING_ENABLED:
+                if abs(difference_usd) > min_amount:
+                    action = "COMPRA" if difference_usd > 0 else "VENTA"
+                    self.log_message(f"🔒 [MODO TEST] {action} BLOQUEADA: {symbol} - ${abs(difference_usd):.2f}", 'INFO')
+                    return f"🔒 [TEST] {action} {symbol}: ${abs(difference_usd):.2f}"
+                else:
+                    return None
+            
+            # Ejecutar orden si la diferencia es significativa (SOLO SI TRADING_ENABLED = True)
             if abs(difference_usd) > min_amount:
                 if difference_usd > 0:
                     # COMPRAR - usar más del capital asignado a este token
@@ -237,10 +246,6 @@ class CapitalManager:
                         self.current_allocations[symbol] = target_allocation_pct
                         self.last_signals[symbol] = self.get_signal_from_weight(current_signal_weight)
                         self.last_signal_weights[symbol] = current_signal_weight
-                        
-                        # LOG ESPECÍFICO PARA MODO MANUAL
-                        if manual_rebalance:
-                            self.log_message(f"🎯 ASIGNACIÓN ACTUALIZADA: {symbol} = {target_allocation_pct*100:.1f}%", 'SUCCESS')
                     else:
                         result = f"❌ COMPRA {symbol} fallida: {message}"
                         self.log_message(f"❌ COMPRA {symbol} fallida: {message}", 'ERROR')
@@ -258,15 +263,10 @@ class CapitalManager:
                         self.current_allocations[symbol] = target_allocation_pct
                         self.last_signals[symbol] = self.get_signal_from_weight(current_signal_weight)
                         self.last_signal_weights[symbol] = current_signal_weight
-                        
-                        # LOG ESPECÍFICO PARA MODO MANUAL
-                        if manual_rebalance:
-                            self.log_message(f"🎯 ASIGNACIÓN ACTUALIZADA: {symbol} = {target_allocation_pct*100:.1f}%", 'SUCCESS')
                     else:
                         result = f"❌ VENTA {symbol} fallida: {message}"
                         self.log_message(f"❌ VENTA {symbol} fallida: {message}", 'ERROR')
                 
-                # Pequeña pausa para evitar rate limits
                 time.sleep(0.3)
                 return result
             
@@ -274,21 +274,11 @@ class CapitalManager:
                 # Diferencia muy pequeña, solo actualizar señal
                 self.last_signals[symbol] = self.get_signal_from_weight(current_signal_weight)
                 self.last_signal_weights[symbol] = current_signal_weight
-                
-                if manual_rebalance:
-                    # En modo manual, informar incluso si no hay acción
-                    return f"⚡ {symbol}: Diferencia mínima (${difference_usd:.2f}) - Umbral: ${min_amount:.2f}"
-                else:
-                    return None  # No action needed
-                    
+                return None
+                        
         except Exception as e:
             error_msg = f"❌ Error rebalanceando {symbol}: {str(e)}"
             self.log_message(error_msg, 'ERROR')
-            
-            # Información adicional para debugging en modo manual
-            if manual_rebalance:
-                self.log_message(f"🔧 DEBUG {symbol}: Señal={symbol_signals}, Precio={current_price}, TotalUSD={total_usd}", 'ERROR')
-            
             return error_msg
 
     def rebalance_portfolio(self, all_signals, all_prices, manual_rebalance=False):
