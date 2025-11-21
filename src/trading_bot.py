@@ -103,7 +103,7 @@ class TradingBot:
         # 2. Timing de análisis por símbolo
         for symbol in SYMBOLS[:2]:  # Probar con 2 símbolos
             start = time.time()
-            results, progresses, percentages = self.analyze_symbol_optimized(symbol)
+            results, progresses, percentages = self.analyze_symbol(symbol)
             timing_data[f'analisis_{symbol}'] = time.time() - start
         
         # Mostrar resultados
@@ -227,7 +227,7 @@ class TradingBot:
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                 futures = {
-                    executor.submit(self.analyze_symbol_optimized, symbol): symbol 
+                    executor.submit(self.analyze_symbol, symbol): symbol 
                     for symbol in SYMBOLS
                 }
                 
@@ -255,32 +255,6 @@ class TradingBot:
         except Exception as e:
             self.log_message(f"❌ Error en análisis paralelo: {str(e)}", 'ERROR')
             return {}, {}, {}
-
-    def analyze_symbol_optimized(self, symbol):
-        """Versión optimizada del análisis - CON CACHE"""
-        symbol_short = symbol.replace('USDC', '')
-        
-        # ✅ Cache de análisis por 30 segundos (velas no cambian tan rápido)
-        cache_key = f"analysis_{symbol}"
-        current_time = time.time()
-        
-        if (cache_key in self.analysis_cache and 
-            current_time - self.analysis_cache[cache_key]['timestamp'] < 30):
-            cached = self.analysis_cache[cache_key]
-            return cached['results'], cached['progresses'], cached['percentages']
-        
-        # Análisis normal (código existente)
-        results, progresses, percentages = self.analyze_symbol(symbol)
-        
-        # Guardar en cache
-        self.analysis_cache[cache_key] = {
-            'results': results,
-            'progresses': progresses, 
-            'percentages': percentages,
-            'timestamp': current_time
-        }
-        
-        return results, progresses, percentages
 
     def run_bot_precise_timing_optimized(self):
         """Bucle principal OPTIMIZADO - LOGS MINIMALISTAS"""
@@ -316,7 +290,7 @@ class TradingBot:
                         all_results, all_progresses, all_percentages = self.analyze_all_symbols_parallel()
                     else:
                         for symbol in SYMBOLS:
-                            results, progresses, percentages = self.analyze_symbol_optimized(symbol)
+                            results, progresses, percentages = self.analyze_symbol(symbol)
                             signal = self.generate_trading_signal(results, symbol)
                             all_results[symbol] = results
                             all_progresses[symbol] = progresses
@@ -513,5 +487,3 @@ class TradingBot:
             return "CAUTIOUS_BEARISH 🟡"
         else:
             return "CONSOLIDATION ⚡"
-
-
