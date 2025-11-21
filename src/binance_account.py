@@ -1,7 +1,7 @@
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 from decimal import Decimal, ROUND_DOWN
-from config import API_KEY, API_SECRET
+from config import API_KEY, API_SECRET, TRADING_ENABLED
 
 class BinanceAccount:
     def __init__(self):

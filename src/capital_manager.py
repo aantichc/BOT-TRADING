@@ -1,6 +1,6 @@
 import time
 from binance_account import BinanceAccount
-from config import SYMBOLS
+from config import SYMBOLS, TRADING_ENABLED
 
 class CapitalManager:
     def __init__(self, gui_instance):
@@ -198,7 +198,7 @@ class CapitalManager:
             difference_usd = target_usd - current_usd
             
             # UMBRAL DINÁMICO
-            min_amount = 5.0 if manual_rebalance else 20.0
+            min_amount = 1.0
             
             # DEBUG DETALLADO (siempre mostrar en modo test)
             if manual_rebalance or abs(difference_usd) > min_amount or not TRADING_ENABLED:
