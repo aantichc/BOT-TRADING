@@ -183,105 +183,56 @@ class CapitalManager:
             return False, f"Error en setup inicial: {str(e)}"
 
     def rebalance_symbol(self, symbol, symbol_signals, current_price, total_usd, manual_rebalance=False):
-        """Rebalancea un símbolo individual - CON MODO TEST"""
         try:
-            # Calcular peso actual de la señal
             current_signal_weight = self.calculate_signal_weight(symbol_signals)
-            
-            # Calcular nueva asignación objetivo
             target_allocation_pct = self.calculate_target_allocation(symbol, current_signal_weight, total_usd)
             target_usd = total_usd * target_allocation_pct
             
-            # Obtener valor actual de la posición
             current_balance = self.account.get_symbol_balance(symbol)
             current_usd = current_balance * current_price
-            
-            # Calcular diferencia
             difference_usd = target_usd - current_usd
             
-            # UMBRAL DINÁMICO
             min_amount = 1.0
             
-            # DEBUG DETALLADO (siempre mostrar en modo test)
-            if manual_rebalance or abs(difference_usd) > min_amount or not TRADING_ENABLED:
-                base_allocation = self.symbol_base_allocations.get(symbol, 0) * 100
-                investment_pct = self.calculate_investment_percentage(current_signal_weight) * 100
-                signal_desc = self.get_signal_from_weight(current_signal_weight)
-                
-                # Mostrar desglose por timeframe
-                timeframe_breakdown = []
-                for tf_name, signal in symbol_signals.items():
-                    weight = 0.30 if tf_name in ["30m", "1h"] else 0.40
-                    contribution = weight if "GREEN" in signal else 0.0
-                    timeframe_breakdown.append(f"{tf_name}: {signal} ({contribution*100:.0f}%)")
-                
-                self.log_message(
-                    f"🔍 {symbol} - Análisis:\n"
-                    f"   📊 Asignación base: {base_allocation:.1f}%\n"
-                    f"   🎯 Señal actual: {signal_desc} (peso: {current_signal_weight:.2f})\n"
-                    f"   📈 Timeframes: {', '.join(timeframe_breakdown)}\n"
-                    f"   💰 Posición actual: ${current_usd:.2f}\n"
-                    f"   🎯 Objetivo actual: ${target_usd:.2f}\n"
-                    f"   📉 Diferencia: ${difference_usd:+.2f}\n"
-                    f"   ⚡ Inversión: {investment_pct:.1f}% del capital asignado",
-                    'INFO'
-                )
-            
-            # ✅ BLOQUEAR OPERACIONES EN MODO TEST
-            if not TRADING_ENABLED:
-                if abs(difference_usd) > min_amount:
-                    action = "COMPRA" if difference_usd > 0 else "VENTA"
-                    self.log_message(f"🔒 [MODO TEST] {action} BLOQUEADA: {symbol} - ${abs(difference_usd):.2f}", 'INFO')
-                    return f"🔒 [TEST] {action} {symbol}: ${abs(difference_usd):.2f}"
-                else:
-                    return None
-            
-            # Ejecutar orden si la diferencia es significativa (SOLO SI TRADING_ENABLED = True)
+            # ✅ SOLO LOG SI HAY OPERACIÓN O MODO MANUAL
             if abs(difference_usd) > min_amount:
-                if difference_usd > 0:
-                    # COMPRAR - usar más del capital asignado a este token
-                    success, message = self.account.buy_market(symbol, difference_usd)
-                    if success:
-                        result = f"✅ COMPRA {symbol}: {message}"
-                        self.log_message(f"💰 COMPRA {symbol}: {message}", 'GREEN')
-                        # Actualizar asignación actual
-                        self.current_allocations[symbol] = target_allocation_pct
-                        self.last_signals[symbol] = self.get_signal_from_weight(current_signal_weight)
-                        self.last_signal_weights[symbol] = current_signal_weight
-                    else:
-                        result = f"❌ COMPRA {symbol} fallida: {message}"
-                        self.log_message(f"❌ COMPRA {symbol} fallida: {message}", 'ERROR')
+                action = "COMPRA" if difference_usd > 0 else "VENTA"
                 
+                if not TRADING_ENABLED:
+                    self.log_message(f"🔒 [TEST] {action} {symbol}: ${abs(difference_usd):.2f}", 'INFO')
+                    return f"🔒 [TEST] {action} {symbol}"
                 else:
-                    # VENDER - reducir la posición de este token
-                    sell_amount_usd = abs(difference_usd)
-                    sell_quantity = sell_amount_usd / current_price
-                    
-                    success, message = self.account.sell_market(symbol, sell_quantity)
-                    if success:
-                        result = f"✅ VENTA {symbol}: {message}"
-                        self.log_message(f"💰 VENTA {symbol}: {message}", 'RED')
-                        # Actualizar asignación actual
-                        self.current_allocations[symbol] = target_allocation_pct
-                        self.last_signals[symbol] = self.get_signal_from_weight(current_signal_weight)
-                        self.last_signal_weights[symbol] = current_signal_weight
+                    if difference_usd > 0:
+                        success, message = self.account.buy_market(symbol, difference_usd)
+                        if success:
+                            self.log_message(f"💰 {action} {symbol}: ${abs(difference_usd):.2f}", 'GREEN')
+                            # Actualizar estado
+                            self.current_allocations[symbol] = target_allocation_pct
+                            self.last_signals[symbol] = self.get_signal_from_weight(current_signal_weight)
+                            self.last_signal_weights[symbol] = current_signal_weight
+                        else:
+                            self.log_message(f"❌ {action} {symbol}: {message}", 'ERROR')
                     else:
-                        result = f"❌ VENTA {symbol} fallida: {message}"
-                        self.log_message(f"❌ VENTA {symbol} fallida: {message}", 'ERROR')
-                
-                time.sleep(0.3)
-                return result
+                        sell_amount_usd = abs(difference_usd)
+                        sell_quantity = sell_amount_usd / current_price
+                        success, message = self.account.sell_market(symbol, sell_quantity)
+                        if success:
+                            self.log_message(f"💰 {action} {symbol}: ${abs(difference_usd):.2f}", 'RED')
+                            # Actualizar estado
+                            self.current_allocations[symbol] = target_allocation_pct
+                            self.last_signals[symbol] = self.get_signal_from_weight(current_signal_weight)
+                            self.last_signal_weights[symbol] = current_signal_weight
+                        else:
+                            self.log_message(f"❌ {action} {symbol}: {message}", 'ERROR')
+                    
+                    time.sleep(0.3)
+                    return f"✅ {action} {symbol}"
             
-            else:
-                # Diferencia muy pequeña, solo actualizar señal
-                self.last_signals[symbol] = self.get_signal_from_weight(current_signal_weight)
-                self.last_signal_weights[symbol] = current_signal_weight
-                return None
+            return None
                         
         except Exception as e:
-            error_msg = f"❌ Error rebalanceando {symbol}: {str(e)}"
-            self.log_message(error_msg, 'ERROR')
-            return error_msg
+            self.log_message(f"❌ Error en {symbol}: {str(e)}", 'ERROR')
+            return f"❌ Error en {symbol}"
 
     def rebalance_portfolio(self, all_signals, all_prices, manual_rebalance=False):
         """Reequilibra el portfolio - VERSIÓN OPTIMIZADA"""

@@ -283,7 +283,7 @@ class TradingBot:
         return results, progresses, percentages
 
     def run_bot_precise_timing_optimized(self):
-        """Bucle principal OPTIMIZADO - VERSIÓN URGENTE"""
+        """Bucle principal OPTIMIZADO - LOGS MINIMALISTAS"""
         # ✅ RESETEO INICIAL
         self.next_update_time = datetime.now() + timedelta(seconds=UPDATE_INTERVAL)
         
@@ -302,34 +302,22 @@ class TradingBot:
                     if self.gui:
                         self.gui.root.after(0, self.gui.update_display_header)
                     
-                    # Log reducido en modo test
-                    if self.counter % 20 == 1:  # Cada 20 ejecuciones en test
-                        self.log_message(f"\n{'='*80}", 'INFO')
-                        self.log_message(f"🔄 EXECUTION #{self.counter} - {execution_start.strftime('%H:%M:%S.%f')[:-3]}", 'INFO')
-                        if not TRADING_ENABLED:
-                            self.log_message("🔒 MODO TEST - Operaciones bloqueadas", 'TEST_MODE')
+                    # ✅ LOG MINIMALISTA - SOLO CADA 30 CICLOS
+                    if self.counter % 30 == 1:
+                        self.log_message(f"🔧 Ciclo #{self.counter}", 'TIMING')
                     
-                    # ✅ DEBUG EXTREMO - IDENTIFICAR CUELOS DE BOTELLA
-                    debug_start = time.time()
-                    
-                    # 1. Timing de precios
-                    price_start = time.time()
+                    # ✅ OBTENER PRECIOS Y ANALIZAR
                     all_prices = self.get_all_prices_bulk_optimized()
-                    price_time = time.time() - price_start
-                    
-                    # 2. Timing de análisis
-                    analysis_start = time.time()
                     all_results, all_progresses, all_signals = {}, {}, {}
                     all_percentages = {}
                     
-                    if len(SYMBOLS) > 2:  # Solo paralelizar si hay suficientes símbolos
+                    # Analizar símbolos en paralelo o secuencial
+                    if len(SYMBOLS) > 2:
                         all_results, all_progresses, all_percentages = self.analyze_all_symbols_parallel()
                     else:
-                        # Análisis secuencial para pocos símbolos
                         for symbol in SYMBOLS:
                             results, progresses, percentages = self.analyze_symbol_optimized(symbol)
                             signal = self.generate_trading_signal(results, symbol)
-                            
                             all_results[symbol] = results
                             all_progresses[symbol] = progresses
                             all_signals[symbol] = signal
@@ -337,29 +325,19 @@ class TradingBot:
                     
                     # Generar señales para símbolos analizados en paralelo
                     for symbol in SYMBOLS:
-                        if symbol not in all_signals:  # Si no se generó en paralelo
+                        if symbol not in all_signals:
                             all_signals[symbol] = self.generate_trading_signal(all_results.get(symbol, {}), symbol)
                     
-                    analysis_time = time.time() - analysis_start
-                    
-                    # Guardar análisis actual para uso externo
+                    # Guardar análisis actual
                     self.current_analysis = all_results
                     
-                    # 3. Timing de GUI
-                    gui_start = time.time()
-                    # Update results in interface
+                    # ✅ ACTUALIZAR INTERFAZ (SIEMPRE)
                     if self.gui:
                         self.gui.root.after(0, lambda: self.gui.update_all_results(
                             all_results, all_progresses, all_signals, all_prices, all_percentages
                         ))
-                    gui_time = time.time() - gui_start
                     
-                    # Mostrar breakdown de timing
-                    if self.counter % 10 == 1:
-                        total_time = time.time() - debug_start
-                        self.log_message(f"🔍 DEBUG TIMING: Precios: {price_time:.2f}s, Análisis: {analysis_time:.2f}s, GUI: {gui_time:.2f}s, Total: {total_time:.2f}s", 'TIMING')
-                    
-                    # ✅ REBALANCEO SELECTIVO (solo si hay cambios significativos)
+                    # ✅ REBALANCEO SOLO POR CAMBIOS DE SEÑAL
                     should_rebalance = any(
                         self.capital_manager.has_signal_changed(
                             symbol, 
@@ -369,57 +347,50 @@ class TradingBot:
                     )
                     
                     if should_rebalance:
-                        rebalance_start = time.time()
                         success, message = self.capital_manager.rebalance_portfolio(all_results, all_prices)
-                        rebalance_time = time.time() - rebalance_start
                         if success and "Rebalanceados" in message:
-                            self.log_message(f"⚖️ {message} ({rebalance_time:.2f}s)", 'TRADE')
+                            # El log detallado ya se hace en capital_manager.py
+                            pass
                     
-                    # Mostrar estado cada 60 ejecuciones en test (cada ~2min)
-                    if self.counter % 60 == 0 and not TRADING_ENABLED:
-                        portfolio_status = self.capital_manager.get_portfolio_status()
-                        self.log_message(f"📊 Estado Portfolio (TEST):\n{portfolio_status}", 'INFO')
-                    
-                    # ✅ TIMING URGENTE - ELIMINAR COMPENSACIÓN COMPLEJA
+                    # ✅ TIMING SILENCIOSO
                     execution_end = datetime.now()
                     execution_time = (execution_end - execution_start).total_seconds()
                     self.execution_times.append(execution_time)
                     
-                    # ✅ SLEEP SIMPLE Y EFECTIVO
+                    # ✅ SLEEP SIMPLE
                     sleep_time = max(0.1, UPDATE_INTERVAL - execution_time)
                     
-                    # ✅ RESETEO AGRESIVO DE DRIFT
+                    # ✅ RESETEO SILENCIOSO DE DRIFT
                     if execution_time > UPDATE_INTERVAL:
-                        # Si la ejecución fue más larga que el intervalo, resetear
                         self.next_update_time = datetime.now() + timedelta(seconds=UPDATE_INTERVAL)
                         sleep_time = 0.1
-                        self.log_message(f"🚨 OVERFLOW: Exec {execution_time:.2f}s > Interval {UPDATE_INTERVAL}s", 'ERROR')
                     
-                    # Update timing display
+                    # Update timing display en GUI (silencioso)
                     if self.gui:
                         self.gui.root.after(0, lambda: self.gui.update_timing_display(
-                            execution_time, sleep_time, 0.0  # Drift forzado a 0
+                            execution_time, sleep_time, 0.0
                         ))
                     
-                    # ✅ LOG CADA 10 EJECUCIONES
-                    if self.counter % 10 == 1:
-                        avg_time = sum(self.execution_times[-10:]) / min(10, len(self.execution_times))
-                        self.log_message(f"⏱️ TIMING URGENTE: Exec: {execution_time:.2f}s, Avg: {avg_time:.2f}s, Sleep: {sleep_time:.2f}s", 'TIMING')
+                    # ✅ LOG DE TIMING SOLO CADA 60 CICLOS
+                    if self.counter % 60 == 1 and len(self.execution_times) > 1:
+                        avg_time = sum(self.execution_times[-30:]) / min(30, len(self.execution_times))
+                        if avg_time > UPDATE_INTERVAL * 0.8:
+                            self.log_message(f"⚠️  Timing lento: {avg_time:.2f}s", 'TIMING')
                     
-                    # Sleep simple
+                    # Sleep preciso
                     if sleep_time > 0:
                         time.sleep(sleep_time)
                 
                 else:
-                    # Espera eficiente
+                    # Espera eficiente y silenciosa
                     time_until_next = (self.next_update_time - datetime.now()).total_seconds()
                     if time_until_next > 0.5:
                         time.sleep(0.1)
                     elif time_until_next > 0.05:
                         time.sleep(0.01)
-                        
+                            
             except Exception as e:
-                self.log_message(f"❌ Error in main loop: {str(e)}", 'ERROR')
+                self.log_message(f"❌ Error en bucle principal: {str(e)}", 'ERROR')
                 time.sleep(UPDATE_INTERVAL)
 
     def get_real_time_data(self, symbol, timeframe):
@@ -487,16 +458,10 @@ class TradingBot:
             hours_remaining = 1 - hour_in_2h_cycle
             minutes_remaining = 60 - now.minute
             return f"{progress:.0f}% ({hours_remaining}h {minutes_remaining}min left)"
-
-    def analyze_symbol(self, symbol):
-        """Analiza un símbolo específico usando Heikin Ashi"""
-        symbol_short = symbol.replace('USDC', '')
         
-        # Solo log detallado cada 10 ejecuciones para evitar spam
-        if self.counter % 10 == 1:
-            self.log_message(f"📊 ANALYSIS {symbol_short} - Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", symbol_short)
-            self.log_message("🎯 Using CURRENT HEIKIN ASHI CANDLE + % MOVEMENT", symbol_short)
-            self.log_message("-" * 50, symbol_short)
+    def analyze_symbol(self, symbol):
+        """Analiza símbolo SIN logs detallados"""
+        symbol_short = symbol.replace('USDC', '')
         
         results = {}
         progresses = {}
@@ -504,96 +469,59 @@ class TradingBot:
         
         for name, tf in TIMEFRAMES.items():
             try:
-                if self.counter % 10 == 1:
-                    self.log_message(f"Analyzing {name}...", symbol_short)
-                
-                # Usar cache de velas para optimizar
                 df = self.get_cached_klines(symbol, tf)
                 
                 if len(df) < LENGTH:
-                    color = f"ERROR: Only {len(df)} candles"
+                    color = "ERROR"
                     movement_percentage = 0.0
                 else:
-                    # Calculate current candle movement percentage
                     movement_percentage = self.calculate_movement_percentage(df)
-                    
-                    # Show last candle timestamp only every 10 executions
-                    if self.counter % 10 == 1:
-                        last_candle_time = df.index[-1].strftime('%Y-%m-%d %H:%M:%S')
-                        self.log_message(f"  Current candle: {last_candle_time} | %: {movement_percentage:+.2f}%", symbol_short)
-                    
                     color, diff = self.indicator_calc.calculate_indicator_oo(df, symbol)
                 
                 results[name] = color
                 progresses[name] = self.get_current_candle_progress(tf)
                 percentages[name] = movement_percentage
-                
-                # Log with color only every 10 executions
-                if self.counter % 10 == 1:
-                    if "GREEN" in color:
-                        self.log_message(f"{name.upper():>4} → {color} | %: {movement_percentage:+.2f}%", 'GREEN')
-                    elif "YELLOW" in color:
-                        self.log_message(f"{name.upper():>4} → {color} | %: {movement_percentage:+.2f}%", 'WARNING')
-                    elif "RED" in color:
-                        self.log_message(f"{name.upper():>4} → {color} | %: {movement_percentage:+.2f}%", 'RED')
-                    else:
-                        self.log_message(f"{name.upper():>4} → {color} | %: {movement_percentage:+.2f}%", 'ERROR')
-                    
+                        
             except Exception as e:
-                error_msg = f"ERROR: {str(e)}"
-                results[name] = error_msg
+                results[name] = f"ERROR: {str(e)}"
                 progresses[name] = "N/A"
                 percentages[name] = 0.0
-                if self.counter % 10 == 1:
-                    self.log_message(f"{name.upper():>4} → {error_msg}", 'ERROR')
-        
-        if self.counter % 10 == 1:
-            self.log_message("-" * 50, symbol_short)
-            
-            # Show current candle progress
-            self.log_message("📈 CURRENT CANDLE PROGRESS:", symbol_short)
-            for tf, progress in progresses.items():
-                self.log_message(f"  {tf.upper():>4} → {progress}", symbol_short)
         
         return results, progresses, percentages
 
     def generate_trading_signal(self, results, symbol):
-        """Genera señal de trading basada en 3 timeframes"""
+        """Solo log cuando hay cambio significativo"""
+        symbol_short = symbol.replace('USDC', '')
+        
         greens = sum(1 for c in results.values() if "GREEN" in c)
         yellows = sum(1 for c in results.values() if "YELLOW" in c)
         reds = sum(1 for c in results.values() if "RED" in c)
         
-        symbol_short = symbol.replace('USDC', '')
+        current_signal = self.get_signal_from_components(greens, yellows, reds)
+        last_signal = self.capital_manager.last_signals.get(symbol, "")
         
-        # Only log every 10 executions to avoid spam
-        if self.counter % 10 == 1:
-            self.log_message(f"🎯 {symbol_short} - SIGNAL: {greens}/3 GREEN | {yellows}/3 YELLOW | {reds}/3 RED", symbol_short)
+        # ✅ SOLO LOG SI HAY CAMBIO DE SEÑAL
+        if current_signal != last_signal:
+            self.log_message(f"🔄 {symbol_short}: {last_signal} → {current_signal}", 'INFO')
         
+        return current_signal
+    
+    
+    def get_signal_from_components(self, greens, yellows, reds):
+        """Determina señal sin logs"""
         if greens == 3:
-            if self.counter % 10 == 1:
-                self.log_message(f"🚀 {symbol_short} - BUY ENTRY - All timeframes GREEN", 'GREEN')
             return "STRONG_BUY 🚀"
         elif reds == 3:
-            if self.counter % 10 == 1:
-                self.log_message(f"🔻 {symbol_short} - SELL ENTRY - All timeframes RED", 'RED') 
             return "STRONG_SELL 🔻"
         elif greens == 2:
-            if self.counter % 10 == 1:
-                self.log_message(f"📈 {symbol_short} - BULLISH SESSION - Majority GREEN", 'GREEN')
             return "BULLISH_TREND 📈"
         elif reds == 2:
-            if self.counter % 10 == 1:
-                self.log_message(f"📉 {symbol_short} - BEARISH SESSION - Majority RED", 'RED')
             return "BEARISH_TREND 📉"
         elif greens >= 1 or yellows >= 2:
-            if self.counter % 10 == 1:
-                self.log_message(f"🟡 {symbol_short} - CAUTIOUS BULLISH - Mixed with YELLOW", 'WARNING')
             return "CAUTIOUS_BULLISH 🟡"
         elif reds >= 1 or yellows >= 2:
-            if self.counter % 10 == 1:
-                self.log_message(f"🟡 {symbol_short} - CAUTIOUS BEARISH - Mixed with YELLOW", 'WARNING')
             return "CAUTIOUS_BEARISH 🟡"
         else:
-            if self.counter % 10 == 1:
-                self.log_message(f"⚡ {symbol_short} - UNDECIDED MARKET - Mixed signals", 'WARNING')
             return "CONSOLIDATION ⚡"
+
+
