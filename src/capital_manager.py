@@ -189,7 +189,7 @@ class CapitalManager:
             current_usd = current_balance * current_price
             difference_usd = target_usd - current_usd
             
-            min_amount = 0.0
+            min_amount = 20.0
             
             # ✅ SOLO LOG SI HAY OPERACIÓN O MODO MANUAL
             if abs(difference_usd) > min_amount:

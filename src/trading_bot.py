@@ -257,7 +257,7 @@ class TradingBot:
             return {}, {}, {}
 
     def run_bot_precise_timing_optimized(self):
-        """Bucle principal OPTIMIZADO - LOGS MINIMALISTAS"""
+        """Bucle principal - SOLO LOGS DE TRADING"""
         # ✅ RESETEO INICIAL
         self.next_update_time = datetime.now() + timedelta(seconds=UPDATE_INTERVAL)
         
@@ -269,23 +269,23 @@ class TradingBot:
                     execution_start = datetime.now()
                     self.counter += 1
                     
-                    # ✅ CALCULAR PRÓXIMO UPDATE ANTES DE EJECUTAR
+                    # ✅ CALCULAR PRÓXIMO UPDATE SILENCIOSAMENTE
                     self.next_update_time = execution_start + timedelta(seconds=UPDATE_INTERVAL)
                     
-                    # Update interface header inmediatamente
+                    # Update interface header
                     if self.gui:
                         self.gui.root.after(0, self.gui.update_display_header)
                     
-                    # ✅ LOG MINIMALISTA - SOLO CADA 30 CICLOS
-                    if self.counter % 30 == 1:
-                        self.log_message(f"🔧 Ciclo #{self.counter}", 'TIMING')
+                    # ❌ ELIMINADO: Log de ciclo cada 30 ejecuciones
+                    # if self.counter % 30 == 1:
+                    #     self.log_message(f"🔧 Ciclo #{self.counter}", 'TIMING')
                     
-                    # ✅ OBTENER PRECIOS Y ANALIZAR
+                    # ✅ OBTENER PRECIOS Y ANALIZAR (SILENCIOSO)
                     all_prices = self.get_all_prices_bulk_optimized()
                     all_results, all_progresses, all_signals = {}, {}, {}
                     all_percentages = {}
                     
-                    # Analizar símbolos en paralelo o secuencial
+                    # Analizar símbolos (silencioso)
                     if len(SYMBOLS) > 2:
                         all_results, all_progresses, all_percentages = self.analyze_all_symbols_parallel()
                     else:
@@ -297,7 +297,7 @@ class TradingBot:
                             all_signals[symbol] = signal
                             all_percentages[symbol] = percentages
                     
-                    # Generar señales para símbolos analizados en paralelo
+                    # Generar señales para paralelo
                     for symbol in SYMBOLS:
                         if symbol not in all_signals:
                             all_signals[symbol] = self.generate_trading_signal(all_results.get(symbol, {}), symbol)
@@ -305,13 +305,13 @@ class TradingBot:
                     # Guardar análisis actual
                     self.current_analysis = all_results
                     
-                    # ✅ ACTUALIZAR INTERFAZ (SIEMPRE)
+                    # ✅ ACTUALIZAR INTERFAZ VISUAL (SIEMPRE)
                     if self.gui:
                         self.gui.root.after(0, lambda: self.gui.update_all_results(
                             all_results, all_progresses, all_signals, all_prices, all_percentages
                         ))
                     
-                    # ✅ VERDADERA DETECCIÓN DE CAMBIO DE SEÑAL
+                    # ✅ DETECCIÓN DE CAMBIO DE SEÑAL (SILENCIOSA)
                     signals_changed = False
                     for symbol in SYMBOLS:
                         current_signal = all_signals.get(symbol, "")
@@ -320,18 +320,18 @@ class TradingBot:
                             signals_changed = True
                             break
 
+                    # ✅ SOLO EJECUTAR REBALANCE (LOS TRADES SE LOGUEAN AUTOMÁTICAMENTE)
                     if signals_changed:
                         success, message = self.capital_manager.rebalance_portfolio(all_results, all_prices)
 
-                    # ✅ TIMING SILENCIOSO
+                    # ✅ TIMING SILENCIOSO (sin logs)
                     execution_end = datetime.now()
                     execution_time = (execution_end - execution_start).total_seconds()
                     self.execution_times.append(execution_time)
                     
-                    # ✅ SLEEP SIMPLE
+                    # ✅ SLEEP SILENCIOSO
                     sleep_time = max(0.1, UPDATE_INTERVAL - execution_time)
                     
-                    # ✅ RESETEO SILENCIOSO DE DRIFT
                     if execution_time > UPDATE_INTERVAL:
                         self.next_update_time = datetime.now() + timedelta(seconds=UPDATE_INTERVAL)
                         sleep_time = 0.1
@@ -342,18 +342,18 @@ class TradingBot:
                             execution_time, sleep_time, 0.0
                         ))
                     
-                    # ✅ LOG DE TIMING SOLO CADA 60 CICLOS
-                    if self.counter % 60 == 1 and len(self.execution_times) > 1:
-                        avg_time = sum(self.execution_times[-30:]) / min(30, len(self.execution_times))
-                        if avg_time > UPDATE_INTERVAL * 0.8:
-                            self.log_message(f"⚠️  Timing lento: {avg_time:.2f}s", 'TIMING')
+                    # ❌ ELIMINADO: Log de timing cada 60 ciclos
+                    # if self.counter % 60 == 1 and len(self.execution_times) > 1:
+                    #     avg_time = sum(self.execution_times[-30:]) / min(30, len(self.execution_times))
+                    #     if avg_time > UPDATE_INTERVAL * 0.8:
+                    #         self.log_message(f"⚠️  Timing lento: {avg_time:.2f}s", 'TIMING')
                     
                     # Sleep preciso
                     if sleep_time > 0:
                         time.sleep(sleep_time)
                 
                 else:
-                    # Espera eficiente y silenciosa
+                    # Espera silenciosa
                     time_until_next = (self.next_update_time - datetime.now()).total_seconds()
                     if time_until_next > 0.5:
                         time.sleep(0.1)
