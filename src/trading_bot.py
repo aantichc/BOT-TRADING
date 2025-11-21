@@ -5,12 +5,14 @@ from binance.client import Client
 from binance.exceptions import BinanceAPIException
 import pandas as pd
 
-from .config import *
-from .indicators import HeikinAshiCalculator, TradingIndicator
+from config import *
+from indicators import HeikinAshiCalculator, TradingIndicator
+from capital_manager import CapitalManager
 
 class TradingBot:
     def __init__(self, gui_instance):
         self.gui = gui_instance  # Instancia de la GUI (puede ser None inicialmente)
+        self.capital_manager = CapitalManager(gui_instance)  # Nuevo gestor de capital
         self.initialize_variables()
     
     def initialize_variables(self):
@@ -24,6 +26,7 @@ class TradingBot:
         self.last_update_time = None
         self.next_update_time = None
         self.execution_times = []
+        self.last_rebalance_time = None
 
     def setup_binance_client(self):
         """Configura el cliente de Binance"""
@@ -95,6 +98,7 @@ class TradingBot:
             self.log_message("⏰ PRECISE TIMING: Updating EVERY SECOND synchronized with system clock", 'INFO')
             self.log_message("💰 Live prices + % movement by timeframe", 'INFO')
             self.log_message("📊 Timing statistics will be shown every 30 executions", 'INFO')
+            self.log_message("⚖️ Capital management ENABLED - Rebalancing on signal changes", 'SUCCESS')
             
             # Start bot loop in separate thread
             self.bot_thread = threading.Thread(target=self.run_bot_precise_timing, daemon=True)
@@ -170,6 +174,17 @@ class TradingBot:
                     # Generate general summary (only log every 10 executions)
                     if self.counter % 10 == 1:
                         self.generate_general_summary(all_signals)
+                    
+                    # REBALANCE PORTFOLIO - ejecutar en cada ciclo para detectar cambios inmediatos
+                    if self.counter % 5 == 0:  # Cada 5 segundos verificar cambios
+                        success, message = self.capital_manager.rebalance_portfolio(all_results, all_prices)
+                        if success and "Rebalanceados" in message:
+                            self.log_message(f"⚖️ {message}", 'TRADE')
+                    
+                    # Mostrar estado del portfolio cada 60 ejecuciones
+                    if self.counter % 60 == 0:
+                        portfolio_status = self.capital_manager.get_portfolio_status()
+                        self.log_message(f"📊 Estado Portfolio:\n{portfolio_status}", 'INFO')
                     
                     # Calcular tiempo de ejecución y ajustar sleep
                     execution_end = datetime.now()

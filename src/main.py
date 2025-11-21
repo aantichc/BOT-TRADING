@@ -1,6 +1,6 @@
 import tkinter as tk
-from .gui import TradingBotGUI
-from .trading_bot import TradingBot
+from gui import TradingBotGUI
+from trading_bot import TradingBot
 
 def main():
     root = tk.Tk()
