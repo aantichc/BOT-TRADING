@@ -337,29 +337,11 @@ class TradingBot:
                             all_results, all_progresses, all_signals, all_prices, all_percentages
                         ))
                     
-                    # ✅ REBALANCEO SOLO POR CAMBIOS DE SEÑAL
-                    should_rebalance = any(
-                        self.capital_manager.has_signal_changed(
-                            symbol, 
-                            self.capital_manager.calculate_signal_weight(all_results.get(symbol, {})),
-                            0.0  # Threshold mínimo
-                        ) for symbol in SYMBOLS
-                    )
-                    # DESPUÉS de calcular should_rebalance, agregar:
-                    if not should_rebalance:
-                        # Debug: ver por qué no se activa
-                        for symbol in SYMBOLS:
-                            current_weight = self.capital_manager.calculate_signal_weight(all_results.get(symbol, {}))
-                            last_weight = self.capital_manager.last_signal_weights.get(symbol, 0.0)
-                            changed = self.capital_manager.has_signal_changed(symbol, current_weight, 0.0)
-                            print(f"🔍 DEBUG {symbol}: current={current_weight}, last={last_weight}, changed={changed}")
-                                        
+                    should_rebalance = True
+
                     if should_rebalance:
                         success, message = self.capital_manager.rebalance_portfolio(all_results, all_prices)
-                        if success and "Rebalanceados" in message:
-                            # El log detallado ya se hace en capital_manager.py
-                            pass
-                    
+
                     # ✅ TIMING SILENCIOSO
                     execution_end = datetime.now()
                     execution_time = (execution_end - execution_start).total_seconds()

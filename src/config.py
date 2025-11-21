@@ -8,7 +8,7 @@ TRADING_ENABLED = True  # Cambiar a True para operar realmente
 # Símbolos en USDC
 SYMBOLS = ["BTCUSDC", "FETUSDC", "SOLUSDC", "XLMUSDC", "LINKUSDC"]
 LENGTH = 8
-UPDATE_INTERVAL = 2  # 1 segundo
+UPDATE_INTERVAL = 2
 
 TIMEFRAMES = {
     "30m": "30m",
