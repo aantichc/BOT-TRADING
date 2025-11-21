@@ -311,9 +311,16 @@ class TradingBot:
                             all_results, all_progresses, all_signals, all_prices, all_percentages
                         ))
                     
-                    should_rebalance = True
+                    # ✅ VERDADERA DETECCIÓN DE CAMBIO DE SEÑAL
+                    signals_changed = False
+                    for symbol in SYMBOLS:
+                        current_signal = all_signals.get(symbol, "")
+                        last_signal = self.capital_manager.last_signals.get(symbol, "")
+                        if current_signal != last_signal:
+                            signals_changed = True
+                            break
 
-                    if should_rebalance:
+                    if signals_changed:
                         success, message = self.capital_manager.rebalance_portfolio(all_results, all_prices)
 
                     # ✅ TIMING SILENCIOSO
