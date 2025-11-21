@@ -64,7 +64,6 @@ class TradingIndicator:
             return 0.0
 
     def calculate_indicator_oo(self, df, symbol):
-        """Calcula indicador con estado AMARILLO"""
         try:
             if len(df) < self.length:
                 return "ERROR: No hay suficientes datos", 0.0
@@ -82,7 +81,7 @@ class TradingIndicator:
             df['up'] = df['rk6'].ewm(span=self.length, adjust=False).mean()
             df['down'] = df['up'].ewm(span=self.length, adjust=False).mean()
             
-            # Analizar vela actual Y anterior para detectar amarillo
+            # Analizar vela actual Y anterior
             last_up = df['up'].iloc[-1]
             last_down = df['down'].iloc[-1]
             prev_up = df['up'].iloc[-2] 
@@ -90,8 +89,12 @@ class TradingIndicator:
             
             diff = last_up - last_down
             
-            # ✅ DETECTAR AMARILLO (transición)
-            is_yellow = (prev_up < last_up) and (last_down < prev_down)
+            # ✅ DETECCIÓN MEJORADA DE AMARILLO
+            # Amarillo = up y down se están cruzando o hay divergencia
+            up_trend_changing = (prev_up > last_up) and (prev_down < last_down)  # up bajando, down subiendo
+            down_trend_changing = (prev_up < last_up) and (prev_down > last_down)  # up subiendo, down bajando
+            
+            is_yellow = up_trend_changing or down_trend_changing
             
             if last_up > last_down:
                 if is_yellow:

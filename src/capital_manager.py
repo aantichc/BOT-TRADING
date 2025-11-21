@@ -34,6 +34,7 @@ class CapitalManager:
             print(f"[CapitalManager] {message}")
     
     def calculate_signal_weight(self, timeframe_results):
+        print(f"🔴 DEBUG timeframe_results: {timeframe_results}")  # ← Agregar esta línea
         """Calcula peso con AMARILLO = 50%"""
         timeframe_weights = {
             "30m": 0.30,
