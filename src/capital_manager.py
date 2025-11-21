@@ -256,7 +256,7 @@ class CapitalManager:
                 
                 # ✅ SOLO rebalancear si la señal cambió significativamente
                 current_signal_weight = self.calculate_signal_weight(symbol_signals)
-                signal_changed = self.has_signal_changed(symbol, current_signal_weight, threshold=0.15)
+                signal_changed = self.has_signal_changed(symbol, current_signal_weight)
                 
                 if signal_changed or manual_rebalance:
                     result = self.rebalance_symbol(symbol, symbol_signals, current_price, total_usd, manual_rebalance)
