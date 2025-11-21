@@ -54,20 +54,17 @@ class CapitalManager:
         
         return total_weight
 
-    def has_signal_changed(self, symbol, current_signal_weight, threshold=0.1):
-        """Determina si la señal de un símbolo específico ha cambiado significativamente"""
+    def has_signal_changed(self, symbol, current_signal_weight, threshold=0.0):
+        """Siempre retorna True si hay CUALQUIER cambio"""
         last_weight = self.last_signal_weights.get(symbol, 0.0)
         
-        # Calcular cambio absoluto
+        # ✅ CUALQUIER cambio > 0 se considera significativo
         weight_change = abs(current_signal_weight - last_weight)
-        
-        # Considerar cambio si la diferencia es mayor al threshold
-        signal_changed = weight_change >= threshold
         
         # Actualizar último peso
         self.last_signal_weights[symbol] = current_signal_weight
         
-        return signal_changed
+        return weight_change > threshold  # Con threshold=0.0, siempre True si hay cambio
     
     def get_signal_from_weight(self, weight):
         """Convierte el peso de señal a string de señal"""
@@ -192,7 +189,7 @@ class CapitalManager:
             current_usd = current_balance * current_price
             difference_usd = target_usd - current_usd
             
-            min_amount = 1.0
+            min_amount = 0.0
             
             # ✅ SOLO LOG SI HAY OPERACIÓN O MODO MANUAL
             if abs(difference_usd) > min_amount:

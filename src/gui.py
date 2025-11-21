@@ -269,8 +269,7 @@ class TradingBotGUI:
         # Configure equal width for symbol columns
         for i in range(len(SYMBOLS)):
             trading_frame.columnconfigure(i, weight=1)
-
-        # ============ NUEVA GRÁFICA DE BALANCE ============
+        # ============ GRÁFICA MEJORADA CON TIMEFRAMES ============
         chart_frame = tk.Frame(trading_frame, 
                             bg=DARK_FRAME, 
                             relief='ridge', 
@@ -279,19 +278,58 @@ class TradingBotGUI:
                             highlightthickness=1)
         chart_frame.grid(row=2, column=0, columnspan=len(SYMBOLS), sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10, 10))
         chart_frame.columnconfigure(0, weight=1)
-        chart_frame.rowconfigure(0, weight=1)
+        chart_frame.rowconfigure(1, weight=1)
         
-        chart_title = tk.Label(chart_frame, 
-                            text="📈 BALANCE HISTORY (USDC)", 
+        # Header de la gráfica con controles
+        chart_header = tk.Frame(chart_frame, bg=DARK_FRAME)
+        chart_header.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=10, pady=5)
+        
+        chart_title = tk.Label(chart_header, 
+                            text="📈 BALANCE HISTORY", 
                             font=('Arial', 11, 'bold'),
                             fg=GOLD,
                             bg=DARK_FRAME)
-        chart_title.grid(row=0, column=0, sticky=tk.W, padx=10, pady=5)
+        chart_title.pack(side=tk.LEFT)
         
-        # Canvas para la gráfica simple (texto basado)
+        # Selector de timeframe
+        timeframe_label = tk.Label(chart_header,
+                                text="Periodo:",
+                                font=('Arial', 9),
+                                fg=TEXT_GRAY,
+                                bg=DARK_FRAME)
+        timeframe_label.pack(side=tk.LEFT, padx=(20, 5))
+        
+        self.timeframe_var = tk.StringVar(value="1h")
+        timeframe_options = ["15m", "30m", "1h", "4h", "1d", "1w"]
+        timeframe_menu = tk.OptionMenu(chart_header, self.timeframe_var, *timeframe_options,
+                                    command=self.on_timeframe_changed)
+        timeframe_menu.config(font=('Arial', 8), bg=DARK_FRAME, fg=TEXT_LIGHT, 
+                            relief='flat', bd=1, highlightthickness=0)
+        timeframe_menu.pack(side=tk.LEFT)
+        
+        # Botón actualizar gráfica
+        refresh_chart_btn = tk.Button(chart_header,
+                                    text="🔄 Actualizar",
+                                    command=self.refresh_chart,
+                                    font=('Arial', 8),
+                                    bg=PURPLE,
+                                    fg=TEXT_LIGHT,
+                                    relief='flat',
+                                    bd=0)
+        refresh_chart_btn.pack(side=tk.LEFT, padx=(10, 0))
+        
+        # Info de la gráfica
+        self.chart_info_label = tk.Label(chart_header,
+                                        text="Cargando...",
+                                        font=('Arial', 8),
+                                        fg=TEXT_GRAY,
+                                        bg=DARK_FRAME)
+        self.chart_info_label.pack(side=tk.RIGHT)
+        
+        # Canvas para la gráfica
         self.chart_canvas = tk.Canvas(chart_frame, 
                                     bg=DARKER_BG, 
-                                    height=120,
+                                    height=150,
                                     highlightthickness=0)
         self.chart_canvas.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=10, pady=(0, 10))
         
@@ -443,9 +481,23 @@ class TradingBotGUI:
         self.style.configure('TButton', background=DARK_FRAME, foreground=TEXT_LIGHT)
         self.style.configure('TScrollbar', background=DARK_FRAME, troughcolor=DARKER_BG)
 
+    def on_timeframe_changed(self, selected_timeframe):
+        """Cuando se cambia el timeframe de la gráfica"""
+        self.log_message(f"📊 Cambiando gráfica a timeframe: {selected_timeframe}", 'INFO')
+        self.refresh_chart()
+
+    def refresh_chart(self):
+        """Actualiza la gráfica con el timeframe seleccionado"""
+        if hasattr(self, 'balance_history') and self.balance_history:
+            self.draw_balance_chart()
+        else:
+            self.chart_info_label.config(text="Sin datos históricos")
+
     def draw_balance_chart(self):
-        """Dibuja una gráfica simple del historial de balances"""
+        """Dibuja la gráfica con el timeframe seleccionado"""
         if not self.balance_history:
+            self.chart_canvas.delete("all")
+            self.chart_canvas.create_text(100, 75, text="No hay datos históricos", fill=TEXT_GRAY)
             return
         
         self.chart_canvas.delete("all")
@@ -453,38 +505,117 @@ class TradingBotGUI:
         width = self.chart_canvas.winfo_width()
         height = self.chart_canvas.winfo_height()
         
-        if width < 10 or height < 10:
+        if width < 50 or height < 50:
             return
         
-        # Calcular min y max para escalar
-        balances = [r['total_balance'] for r in self.balance_history]
+        # Filtrar datos según el timeframe seleccionado
+        filtered_data = self.filter_data_by_timeframe(self.balance_history)
+        
+        if not filtered_data:
+            self.chart_canvas.create_text(width//2, height//2, text="No hay datos para este periodo", fill=TEXT_GRAY)
+            return
+        
+        balances = [r['total_balance'] for r in filtered_data]
+        timestamps = [r['timestamp'] for r in filtered_data]
+        
         min_balance = min(balances)
         max_balance = max(balances)
         balance_range = max_balance - min_balance
         
         if balance_range == 0:
-            balance_range = 1  # Evitar división por cero
+            balance_range = 1
         
         # Dibujar ejes
-        self.chart_canvas.create_line(40, height-20, width-10, height-20, fill=TEXT_GRAY)  # Eje X
-        self.chart_canvas.create_line(40, 10, 40, height-20, fill=TEXT_GRAY)  # Eje Y
+        self.chart_canvas.create_line(50, height-30, width-10, height-30, fill=TEXT_GRAY, width=1)  # Eje X
+        self.chart_canvas.create_line(50, 10, 50, height-30, fill=TEXT_GRAY, width=1)  # Eje Y
         
         # Dibujar línea de balance
         points = []
-        for i, record in enumerate(self.balance_history):
-            x = 40 + (i / (len(self.balance_history) - 1)) * (width - 50) if len(self.balance_history) > 1 else 40
-            y = height - 20 - ((record['total_balance'] - min_balance) / balance_range) * (height - 40)
+        for i, record in enumerate(filtered_data):
+            x = 50 + (i / (len(filtered_data) - 1)) * (width - 60) if len(filtered_data) > 1 else 50
+            y = height - 30 - ((record['total_balance'] - min_balance) / balance_range) * (height - 50)
             points.extend([x, y])
         
         if len(points) >= 4:
+            # Línea principal
             self.chart_canvas.create_line(points, fill=GREEN, width=2, smooth=True)
+            
+            # Puntos en los datos
+            for i in range(0, len(points), 2):
+                if i == 0 or i == len(points)-2:  # Primer y último punto
+                    self.chart_canvas.create_oval(points[i]-3, points[i+1]-3, 
+                                                points[i]+3, points[i+1]+3, 
+                                                fill=GREEN, outline=GREEN)
         
-        # Mostrar valores actuales
-        current_balance = self.balance_history[-1]['total_balance']
-        self.chart_canvas.create_text(width//2, 15, 
-                                     text=f"Current: ${current_balance:,.2f} | Min: ${min_balance:,.2f} | Max: ${max_balance:,.2f}", 
-                                     fill=TEXT_LIGHT, 
-                                     font=('Arial', 8))
+        # Información de la gráfica
+        current_balance = filtered_data[-1]['total_balance'] if filtered_data else 0
+        initial_balance = filtered_data[0]['total_balance'] if filtered_data else 0
+        profit_loss = current_balance - initial_balance
+        profit_loss_pct = (profit_loss / initial_balance * 100) if initial_balance > 0 else 0
+        
+        color = GREEN if profit_loss >= 0 else RED
+        symbol = "↗️" if profit_loss >= 0 else "↘️"
+        
+        info_text = f"Actual: ${current_balance:,.2f} | {symbol} ${profit_loss:+,.2f} ({profit_loss_pct:+.1f}%)"
+        self.chart_info_label.config(text=info_text, fg=color)
+        
+        # Leyenda de ejes
+        self.chart_canvas.create_text(width//2, height-15, 
+                                     text=self.get_timeframe_display_name(), 
+                                     fill=TEXT_GRAY, font=('Arial', 8))
+        
+        # Valores en eje Y
+        y_step = (max_balance - min_balance) / 4
+        for i in range(5):
+            value = min_balance + i * y_step
+            y = height - 30 - (i * (height - 50) / 4)
+            self.chart_canvas.create_text(45, y, text=f"${value:,.0f}", 
+                                         fill=TEXT_GRAY, font=('Arial', 7), anchor='e')
+
+    def filter_data_by_timeframe(self, data):
+        """Filtra los datos según el timeframe seleccionado"""
+        if not data:
+            return []
+        
+        timeframe = self.timeframe_var.get()
+        now = datetime.now()
+        
+        if timeframe == "15m":
+            cutoff = now - timedelta(hours=6)  # 6 horas de datos
+        elif timeframe == "30m":
+            cutoff = now - timedelta(hours=12)  # 12 horas
+        elif timeframe == "1h":
+            cutoff = now - timedelta(days=1)  # 1 día
+        elif timeframe == "4h":
+            cutoff = now - timedelta(days=3)  # 3 días
+        elif timeframe == "1d":
+            cutoff = now - timedelta(days=7)  # 1 semana
+        elif timeframe == "1w":
+            cutoff = now - timedelta(days=30)  # 1 mes
+        else:
+            cutoff = now - timedelta(days=1)  # Default
+        
+        filtered = [r for r in data if r['timestamp'] > cutoff]
+        
+        # Limitar número de puntos para mejor visualización
+        max_points = 50
+        if len(filtered) > max_points:
+            step = len(filtered) // max_points
+            filtered = filtered[::step]
+        
+        return filtered
+
+    def get_timeframe_display_name(self):
+        """Obtiene el nombre display del timeframe"""
+        names = {
+            "15m": "Últimas 6 horas (15m)",
+            "30m": "Últimas 12 horas (30m)", 
+            "1h": "Último día (1h)",
+            "4h": "Últimos 3 días (4h)",
+            "1d": "Última semana (1d)",
+            "1w": "Último mes (1w)"
+        }
+        return names.get(self.timeframe_var.get(), self.timeframe_var.get())
 
     def setup_account_updater(self):
         """Configura la actualización automática de la información de la cuenta"""

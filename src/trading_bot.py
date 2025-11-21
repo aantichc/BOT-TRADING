@@ -342,7 +342,7 @@ class TradingBot:
                         self.capital_manager.has_signal_changed(
                             symbol, 
                             self.capital_manager.calculate_signal_weight(all_results.get(symbol, {})),
-                            0.001  # Threshold mínimo
+                            0.0  # Threshold mínimo
                         ) for symbol in SYMBOLS
                     )
                     

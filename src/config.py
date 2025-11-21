@@ -44,3 +44,7 @@ ACCOUNT_BG = '#1a1a2a'
 # Bordes y efectos
 BORDER_COLOR = '#333333'
 HIGHLIGHT_COLOR = '#444444'
+
+# Configuración de la gráfica
+CHART_TIMEFRAMES = ["15m", "30m", "1h", "4h", "1d", "1w"]
+DEFAULT_CHART_TIMEFRAME = "1h"
