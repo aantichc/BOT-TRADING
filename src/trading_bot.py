@@ -345,7 +345,15 @@ class TradingBot:
                             0.0  # Threshold mínimo
                         ) for symbol in SYMBOLS
                     )
-                    
+                    # DESPUÉS de calcular should_rebalance, agregar:
+                    if not should_rebalance:
+                        # Debug: ver por qué no se activa
+                        for symbol in SYMBOLS:
+                            current_weight = self.capital_manager.calculate_signal_weight(all_results.get(symbol, {}))
+                            last_weight = self.capital_manager.last_signal_weights.get(symbol, 0.0)
+                            changed = self.capital_manager.has_signal_changed(symbol, current_weight, 0.0)
+                            print(f"🔍 DEBUG {symbol}: current={current_weight}, last={last_weight}, changed={changed}")
+                                        
                     if should_rebalance:
                         success, message = self.capital_manager.rebalance_portfolio(all_results, all_prices)
                         if success and "Rebalanceados" in message:

@@ -64,7 +64,7 @@ class CapitalManager:
         # Actualizar último peso
         self.last_signal_weights[symbol] = current_signal_weight
         
-        return weight_change > threshold  # Con threshold=0.0, siempre True si hay cambio
+        return weight_change >= threshold  # Con threshold=0.0, siempre True si hay cambio
     
     def get_signal_from_weight(self, weight):
         """Convierte el peso de señal a string de señal"""
