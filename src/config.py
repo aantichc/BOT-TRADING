@@ -6,7 +6,7 @@ API_SECRET = "yAseWTGu6vFlPKyIGkhttip23lcLVsvnybOgflFSt23EE1RjVg0mzdtTE84DBVNY"
 TRADING_ENABLED = True  # Cambiar a True para operar realmente
 
 # Símbolos en USDC
-SYMBOLS = ["BTCUSDC", "FETUSDC", "SOLUSDC", "XLMUSDC", "LINKUSDC"]
+SYMBOLS = ["BNBUSDC", "FETUSDC", "SOLUSDC", "XLMUSDC", "LINKUSDC"]
 LENGTH = 8
 UPDATE_INTERVAL = 2
 
