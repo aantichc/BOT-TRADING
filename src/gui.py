@@ -21,6 +21,7 @@ class TradingGUI:
         self.update_job = None
         self.data_queue = queue.Queue()
         self.updating = False
+        self.closing = False  # ✅ NUEVO: Bandera de cierre
 
         self.root = tk.Tk()
         self.root.title("TRADING BOT - VERSIÓN ESTABLE")
@@ -321,10 +322,31 @@ class TradingGUI:
         except Exception as e:
             print(f"Error updating chart: {e}")
 
+
     def on_close(self):
-        """Maneja el cierre de la aplicación"""
+        """Maneja el cierre completo de la aplicación"""
+        if self.closing:
+            return  # ✅ Evitar múltiples llamadas
+        
+        self.closing = True  # ✅ Marcar que estamos cerrando
+        
+        print("Cerrando aplicación...")  # ✅ Debug
+        
+        # 1. Cancelar actualizaciones programadas
         if self.update_job:
             self.root.after_cancel(self.update_job)
+            self.update_job = None
+        
+        # 2. Detener el bot completamente
+        if self.bot:
+            self.bot.stop_completely()  # ✅ Nuevo método para cierre completo
+        
+        # 3. Guardar historial
         self.save_history()
-        self.bot.stop()
+        
+        # 4. Cerrar ventana
         self.root.destroy()
+        
+        # 5. Forzar cierre del proceso
+        print("Aplicación cerrada correctamente")
+        os._exit(0)  # ✅ Cierre completo del proceso

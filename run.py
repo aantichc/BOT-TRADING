@@ -1,15 +1,29 @@
-# run.py
+# run.py - VERSIÓN CON CIERRE MEJORADO
 import os
 import sys
+import signal
 
-# Añade la carpeta raíz del proyecto (donde está src) al path
-# Esto es clave en Windows
-current_dir = os.path.dirname(os.path.abspath(__file__))
-src_path = os.path.join(current_dir, "src")
-sys.path.insert(0, src_path)
+# Agregar el directorio src al path
+sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
-# Ahora sí puede importar desde src
-from main import main
+def signal_handler(sig, frame):
+    """Manejar Ctrl+C"""
+    print('\nCerrando aplicación...')
+    sys.exit(0)
 
-if __name__ == "__main__":
+def main():
+    # Registrar manejador de señales
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    try:
+        from main import main as app_main
+        app_main()
+    except KeyboardInterrupt:
+        print('\nAplicación interrumpida por el usuario')
+        sys.exit(0)
+    except Exception as e:
+        print(f'Error: {e}')
+        sys.exit(1)
+
+if __name__ == '__main__':
     main()
