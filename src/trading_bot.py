@@ -15,6 +15,7 @@ class TradingBot:
     def __init__(self, gui_instance):
         self.gui = gui_instance  # Instancia de la GUI (puede ser None inicialmente)
         self.capital_manager = CapitalManager(gui_instance)  # Nuevo gestor de capital
+        self.capital_manager.account.gui = gui_instance  # ← Esta línea es clave
         self.initialize_variables()
         # ✅ NUEVO: Cache optimizado
         self.setup_optimized_cache()

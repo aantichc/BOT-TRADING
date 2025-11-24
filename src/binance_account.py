@@ -8,6 +8,7 @@ class BinanceAccount:
         self.client = None
         self.current_min_qty = 0.0
         self.current_max_qty = 0.0
+        self.gui = None  # ← NUEVO: referencia al GUI
         self.setup_client()
     
     def setup_client(self):
@@ -248,8 +249,10 @@ class BinanceAccount:
                 symbol=symbol,
                 quantity=quantity
             )
-            
-            return True, f"Compra exitosa: {quantity:.8f} {symbol} por ${usd_amount:.2f} USDC"
+            success_msg = f"COMPRA {symbol}: {quantity:.6f} @ ${current_price:,.4f} → ${usd_amount:,.2f}"
+            if self.gui:
+                self.gui.log_message(success_msg, 'GREEN')
+            return True, success_msg
             
         except BinanceAPIException as e:
             return False, f"Error API en compra: {e.message}"
@@ -297,7 +300,10 @@ class BinanceAccount:
             current_price = self.get_current_price(symbol)
             usd_amount = quantity * current_price
             
-            return True, f"Venta exitosa: {quantity:.8f} {symbol} por ${usd_amount:.2f} USDC"
+            success_msg = f"VENTA {symbol}: {quantity:.6f} @ ${current_price:,.4f} → ${usd_amount:,.2f}"
+            if self.gui:
+                self.gui.log_message(success_msg, 'RED')
+            return True, success_msg
             
         except BinanceAPIException as e:
             return False, f"Error API en venta: {e.message}"
