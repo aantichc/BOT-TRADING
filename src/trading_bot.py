@@ -13,7 +13,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 class TradingBot:
     def __init__(self, gui):
+        print(f"🤖 Creando bot - GUI recibida: {gui is not None}")
         self.gui = gui
+        print(f"🤖 Bot GUI asignada: {self.gui is not None}")
+
         self.client = Client(API_KEY, API_SECRET)
         self.indicators = Indicators(self.client)
         self.account = BinanceAccount(self.gui)

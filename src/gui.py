@@ -24,23 +24,29 @@ TEXT_COLOR = "#ffffff"
 TEXT_SECONDARY = "#bbbbbb"
 
 class ModernTradingGUI:
-    def __init__(self, bot):
+    def __init__(self, bot=None):
+        print("🎨 Inicializando GUI...")
+        
+        # ✅ SOLO ESTAS TRES LÍNEAS PARA EL BOT:
         self.bot = bot
-        self.bot.gui = self
+        print(f"✅ Bot asignado a GUI: {self.bot is not None}")
+        if self.bot is not None:
+            self.bot.gui = self
+            print(f"✅ GUI conectada a bot existente")
+        else:
+            print("⚠️ GUI creada sin bot (será conectado después)")
+        
+        # ✅ EL RESTO DEL CÓDIGO NORMAL:
         self.update_job = None
         self.data_queue = queue.Queue()
         self.updating = False
         self.closing = False
         
-        # Configuración de matplotlib para tema oscuro
+        # Configuración de matplotlib...
         plt.rcParams['figure.facecolor'] = DARK_BG
         plt.rcParams['axes.facecolor'] = CARD_BG
-        plt.rcParams['axes.edgecolor'] = TEXT_SECONDARY
-        plt.rcParams['axes.labelcolor'] = TEXT_COLOR
-        plt.rcParams['xtick.color'] = TEXT_SECONDARY
-        plt.rcParams['ytick.color'] = TEXT_SECONDARY
-        plt.rcParams['text.color'] = TEXT_COLOR
-
+        # ... resto de configuraciones
+        
         self.setup_window()
         self.setup_styles()
         self.create_widgets()
@@ -87,6 +93,11 @@ class ModernTradingGUI:
         self.create_button(control_frame, "⏹ STOP", DANGER_COLOR, self.safe_stop).pack(side=tk.LEFT, padx=5)
         self.create_button(control_frame, "⚖ REBALANCE", WARNING_COLOR, self.safe_rebalance).pack(side=tk.LEFT, padx=5)
         self.create_button(control_frame, "🔄 REINICIAR", SECONDARY_COLOR, self.safe_restart_app).pack(side=tk.LEFT, padx=5)  # ← NUEVO BOTÓN
+                # En create_widgets(), después de crear los botones:
+        if self.bot is None:
+            self.start_btn.config(state='disabled', bg='gray')
+            self.stop_btn.config(state='disabled', bg='gray') 
+            self.rebalance_btn.config(state='disabled', bg='gray')
         
         # Selector de timeframe
         tk.Label(control_frame, text="TIMEFRAME:", bg=DARK_BG, fg=TEXT_SECONDARY, 
@@ -354,13 +365,43 @@ class ModernTradingGUI:
 
     # Métodos de actualización y comunicación (similares a los anteriores)
     def safe_start(self):
+        """Inicia el bot de forma segura"""
+        if self.bot is None:
+            self.log_trade("❌ No hay bot conectado. Usa 'Reiniciar App'", 'RED')
+            return
         threading.Thread(target=self.bot.start, daemon=True).start()
 
     def safe_stop(self):
+        """Detiene el bot de forma segura"""
+        if self.bot is None:
+            self.log_trade("❌ No hay bot conectado", 'RED')
+            return
         self.bot.stop()
 
     def safe_rebalance(self):
+        """Rebalance manual seguro"""
+        if self.bot is None:
+            self.log_trade("❌ No hay bot conectado", 'RED')
+            return
         threading.Thread(target=self.bot.rebalance_manual, daemon=True).start()
+
+    def safe_restart_app(self):
+        """Reinicia toda la aplicación completamente"""
+        from tkinter import messagebox
+        import sys
+        import os
+        import subprocess
+        
+        result = messagebox.askyesno(
+            "Reiniciar Aplicación", 
+            "¿Reiniciar toda la aplicación?"
+        )
+        
+        if result:
+            self.log_trade("🔄 Reiniciando aplicación...", 'BLUE')
+            if self.bot:
+                self.bot.stop_completely()
+            self.root.after(1000, self._perform_restart)
 
     def log_trade(self, msg, color="white"):
         """Agrega mensaje al log de forma thread-safe"""
@@ -737,28 +778,6 @@ class ModernTradingGUI:
         print("Aplicación cerrada correctamente")
         import os
         os._exit(0)
-
-    def safe_restart_app(self):
-        """Reinicia toda la aplicación completamente"""
-        from tkinter import messagebox
-        import sys
-        import os
-        import subprocess
-        
-        result = messagebox.askyesno(
-            "Reiniciar Aplicación", 
-            "¿Reiniciar toda la aplicación?\n\nSe cerrará y volverá a abrir con los últimos cambios de código.\n\n✅ Todos los cambios en el código se aplicarán\n✅ Se reiniciará el bot y la interfaz\n✅ El historial se mantendrá"
-        )
-        
-        if result:
-            self.log_trade("🔄 Reiniciando aplicación completa...", 'BLUE')
-            
-            # Detener el bot actual si existe
-            if hasattr(self, 'bot') and self.bot:
-                self.bot.stop_completely()
-            
-            # Pequeña pausa para asegurar el cierre
-            self.root.after(500, self._perform_restart)
 
     def _perform_restart(self):
         """Ejecuta el reinicio completo"""
