@@ -45,7 +45,7 @@ class TradingBot:
 
     def setup_optimized_cache(self):
         """Configura cache más agresivo para modo test"""
-        self.cache_timeout = 300 if not TRADING_ENABLED else 30  # 5min test, 30s live
+        self.cache_timeout = 30
         self.bulk_price_cache = {'data': None, 'timestamp': 0}
         self.symbol_info_cache = {}
         self.analysis_cache = {}
@@ -447,7 +447,7 @@ class TradingBot:
             return f"{progress:.0f}% ({hours_remaining}h {minutes_remaining}min left)"
         
     def analyze_symbol(self, symbol):
-        """Analiza símbolo SIN logs detallados"""
+        """Analiza símbolo CON logs de debug"""
         symbol_short = symbol.replace('USDC', '')
         
         results = {}
@@ -468,6 +468,9 @@ class TradingBot:
                 results[name] = color
                 progresses[name] = self.get_current_candle_progress(tf)
                 percentages[name] = movement_percentage
+                
+                # FIX: Log de debug para ver señales raw
+                print(f"[DEBUG] {symbol} {name}: {color} (diff={diff:.2f}, %={movement_percentage:.2f})")
                         
             except Exception as e:
                 results[name] = f"ERROR: {str(e)}"
@@ -475,7 +478,6 @@ class TradingBot:
                 percentages[name] = 0.0
         
         return results, progresses, percentages
-    
     def generate_trading_signal(self, results, symbol):
         """Con HYSTERESIS para evitar logs por oscilación"""
         symbol_short = symbol.replace('USDC', '')

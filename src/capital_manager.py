@@ -151,8 +151,8 @@ class CapitalManager:
                 # Calcular diferencia
                 difference_usd = target_usd - current_usd
                 
-                # Ejecutar orden inicial si la diferencia es significativa
-                if abs(difference_usd) > 20:  # Mínimo $20 para evitar órdenes muy pequeñas
+                # FIX: Bajar umbral a 5 para inicial setup (permite trades pequeños)
+                if abs(difference_usd) > 5:  # Antes: 20
                     if difference_usd > 0:
                         success, message = self.account.buy_market(symbol, difference_usd)
                         action_type = "COMPRA INICIAL"
@@ -161,82 +161,74 @@ class CapitalManager:
                         sell_amount_usd = abs(difference_usd)
                         sell_quantity = sell_amount_usd / current_price
                         success, message = self.account.sell_market(symbol, sell_quantity)
-                        action_type = "VENTA INICIAL" 
+                        action_type = "VENTA INICIAL"
                         log_tag = 'RED'
                     
                     if success:
-                        result = f"✅ {action_type} {symbol}: {message}"
-                        rebalance_actions.append(result)
-                        self.log_message(f"💰 {action_type} {symbol}: {message}", log_tag)
+                        rebalance_actions.append(f"💰 {action_type} {symbol}: ${abs(difference_usd):.2f}")
+                        self.log_message(rebalance_actions[-1], log_tag)
+                        # Actualizar asignación actual
                         self.current_allocations[symbol] = target_allocation_pct
                     else:
-                        result = f"❌ {action_type} {symbol} fallida: {message}"
-                        rebalance_actions.append(result)
-                        self.log_message(f"❌ {action_type} {symbol} fallida: {message}", 'ERROR')
-                    
-                    time.sleep(0.3)
-            
-            if rebalance_actions:
-                self.initial_setup_done = True
-                self.log_message("🎯 CONFIGURACIÓN INICIAL COMPLETADA - USDC", 'SUCCESS')
-                return True, " | ".join(rebalance_actions)
-            else:
-                self.initial_setup_done = True
-                self.log_message("⚡ Configuración inicial: No se requirieron ajustes", 'INFO')
-                return True, "No se requirieron ajustes en setup inicial"
+                        self.log_message(f"❌ {action_type} {symbol}: {message}", 'ERROR')
                 
+                time.sleep(0.3)
+            
+            self.initial_setup_done = True  # Marcar como hecho
+            if rebalance_actions:
+                return True, "Setup inicial completado"
+            return True, "No requerido setup inicial"
+            
         except Exception as e:
-            self.log_message(f"❌ Error en configuración inicial: {str(e)}", 'ERROR')
+            self.log_message(f"❌ Error en setup inicial: {str(e)}", 'ERROR')
             return False, f"Error en setup inicial: {str(e)}"
 
     def rebalance_symbol(self, symbol, symbol_signals, current_price, total_usd, manual_rebalance=False):
+        """Reequilibra un símbolo específico - VERSIÓN OPTIMIZADA"""
         try:
             current_signal_weight = self.calculate_signal_weight(symbol_signals)
+            current_signal = self.get_signal_from_weight(current_signal_weight)
+            
             target_allocation_pct = self.calculate_target_allocation(symbol, current_signal_weight, total_usd)
             target_usd = total_usd * target_allocation_pct
             
             current_balance = self.account.get_symbol_balance(symbol)
             current_usd = current_balance * current_price
+            
             difference_usd = target_usd - current_usd
             
-            min_amount = 20.0
+            # FIX: Bajar umbral a 5 USD, y ignorarlo en manual_rebalance para forzar trades
+            min_diff = 0 if manual_rebalance else 5  # Antes: 20 siempre
+            if abs(difference_usd) <= min_diff:
+                # FIX: Log de debug para ver por qué no tradea
+                print(f"[DEBUG] {symbol}: Diferencia {difference_usd:.2f} < {min_diff}, no trade (manual={manual_rebalance})")
+                return None
             
-            # ✅ SOLO LOG SI HAY OPERACIÓN O MODO MANUAL
-            if abs(difference_usd) > min_amount:
-                action = "COMPRA" if difference_usd > 0 else "VENTA"
-                
-                if not TRADING_ENABLED:
-                    self.log_message(f"🔒 [TEST] {action} {symbol}: ${abs(difference_usd):.2f}", 'INFO')
-                    return f"🔒 [TEST] {action} {symbol}"
-                else:
-                    if difference_usd > 0:
-                        success, message = self.account.buy_market(symbol, difference_usd)
-                        if success:
-                            self.log_message(f"💰 {action} {symbol}: ${abs(difference_usd):.2f}", 'GREEN')
-                            # Actualizar estado
-                            self.current_allocations[symbol] = target_allocation_pct
-                            self.last_signals[symbol] = self.get_signal_from_weight(current_signal_weight)
-                            self.last_signal_weights[symbol] = current_signal_weight
-                        else:
-                            self.log_message(f"❌ {action} {symbol}: {message}", 'ERROR')
-                    else:
-                        sell_amount_usd = abs(difference_usd)
-                        sell_quantity = sell_amount_usd / current_price
-                        success, message = self.account.sell_market(symbol, sell_quantity)
-                        if success:
-                            self.log_message(f"💰 {action} {symbol}: ${abs(difference_usd):.2f}", 'RED')
-                            # Actualizar estado
-                            self.current_allocations[symbol] = target_allocation_pct
-                            self.last_signals[symbol] = self.get_signal_from_weight(current_signal_weight)
-                            self.last_signal_weights[symbol] = current_signal_weight
-                        else:
-                            self.log_message(f"❌ {action} {symbol}: {message}", 'ERROR')
-                    
-                    time.sleep(0.3)
-                    return f"✅ {action} {symbol}"
+            action = "COMPRA" if difference_usd > 0 else "VENTA"
+            if manual_rebalance:
+                action = f"REBALANCE {action}"
             
-            return None
-                        
+            if difference_usd > 0:
+                success, message = self.account.buy_market(symbol, difference_usd)
+                log_tag = 'GREEN'
+            else:
+                sell_amount_usd = abs(difference_usd)
+                sell_quantity = sell_amount_usd / current_price
+                success, message = self.account.sell_market(symbol, sell_quantity)
+                log_tag = 'RED'
+            
+            if success:
+                self.log_message(f"💰 {action} {symbol}: ${abs(difference_usd):.2f}", log_tag)
+                # Actualizar estado
+                self.current_allocations[symbol] = target_allocation_pct
+                self.last_signals[symbol] = current_signal
+                self.last_signal_weights[symbol] = current_signal_weight
+            else:
+                self.log_message(f"❌ {action} {symbol}: {message}", 'ERROR')
+            
+            time.sleep(0.3)
+            return f"✅ {action} {symbol}"
+            
         except Exception as e:
             self.log_message(f"❌ Error en {symbol}: {str(e)}", 'ERROR')
             return f"❌ Error en {symbol}"
@@ -247,7 +239,9 @@ class CapitalManager:
             # PRIMERO: Manejar configuración inicial si no se ha hecho
             if not self.initial_setup_done:
                 success, message = self.handle_initial_setup(all_signals, all_prices)
-                return success, message
+                # FIX: Si manual, continuar con rebalance normal después de initial
+                if not manual_rebalance:
+                    return success, message
             
             # LUEGO: Rebalanceo normal por cambios
             total_usd, _ = self.account.get_spot_balance_usd()

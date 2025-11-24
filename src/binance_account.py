@@ -181,7 +181,7 @@ class BinanceAccount:
         except Exception as e:
             print(f"Error obteniendo precio de {symbol}: {str(e)}")
             return 0.0
-    
+
     def buy_market(self, symbol, usd_amount):
         """Compra una crypto con cantidad en USDC - VERSIÓN FINAL"""
         if not TRADING_ENABLED:
@@ -221,8 +221,16 @@ class BinanceAccount:
             
             # Verificar balance USDC específicamente
             usdc_balance = self.get_usdc_balance()
+            # FIX: Si usd_amount > usdc_balance, comprar lo máximo disponible (en lugar de fallar)
             if usd_amount > usdc_balance:
-                return False, f"Balance USDC insuficiente. Disponible: ${usdc_balance:.2f}, Necesario: ${usd_amount:.2f}"
+                if usdc_balance > 0:
+                    usd_amount = usdc_balance  # Comprar lo que queda
+                    raw_quantity = usd_amount / current_price
+                    quantity = self.format_quantity(raw_quantity, step_size) if lot_size_filter else raw_quantity
+                    quantity = max(min_qty, min(max_qty, quantity)) if lot_size_filter else quantity
+                    print(f"[DEBUG] Balance bajo: Comprando máximo disponible ${usd_amount:.2f}")
+                else:
+                    return False, f"Balance USDC insuficiente. Disponible: ${usdc_balance:.2f}, Necesario: ${usd_amount:.2f}"
             
             # DEBUG mejorado
             precision = self.get_step_precision(step_size) if lot_size_filter else 8
@@ -247,7 +255,7 @@ class BinanceAccount:
             return False, f"Error API en compra: {e.message}"
         except Exception as e:
             return False, f"Error en compra: {str(e)}"
-    
+
     def sell_market(self, symbol, quantity):
         """Vende una crypto a precio de mercado - VERSIÓN USDC"""
         if not TRADING_ENABLED:
