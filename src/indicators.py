@@ -1,111 +1,61 @@
+
+# Archivo: indicators.py
 import pandas as pd
-import numpy as np
-from datetime import datetime
+from binance.client import Client
 
-class HeikinAshiCalculator:
-    @staticmethod
-    def convert_to_heikin_ashi(df):
-        """Convierte un DataFrame de velas normales a Heikin Ashi"""
-        try:
-            ha_df = df.copy()
-            
-            # Calcular Heikin Ashi
-            ha_df['HA_Close'] = (df['Open'] + df['High'] + df['Low'] + df['Close']) / 4
-            
-            # Inicializar HA_Open con primer valor
-            ha_df['HA_Open'] = 0.0
-            ha_df.loc[ha_df.index[0], 'HA_Open'] = (df['Open'].iloc[0] + df['Close'].iloc[0]) / 2
-            
-            # Calcular HA_Open para las velas restantes
-            for i in range(1, len(ha_df)):
-                ha_df.iloc[i, ha_df.columns.get_loc('HA_Open')] = (
-                    ha_df['HA_Open'].iloc[i-1] + ha_df['HA_Close'].iloc[i-1]
-                ) / 2
-            
-            # Calcular HA_High y HA_Low
-            ha_df['HA_High'] = ha_df[['HA_Open', 'HA_Close', 'High']].max(axis=1)
-            ha_df['HA_Low'] = ha_df[['HA_Open', 'HA_Close', 'Low']].min(axis=1)
-            
-            # Reemplazar columnas originales con Heikin Ashi
-            ha_df['Open'] = ha_df['HA_Open']
-            ha_df['High'] = ha_df['HA_High']
-            ha_df['Low'] = ha_df['HA_Low']
-            ha_df['Close'] = ha_df['HA_Close']
-            
-            # Eliminar columnas temporales
-            ha_df.drop(['HA_Open', 'HA_High', 'HA_Low', 'HA_Close'], axis=1, inplace=True)
-            
-            return ha_df
-            
-        except Exception as e:
-            raise Exception(f"Error convirtiendo a Heikin Ashi: {str(e)}")
-
-class TradingIndicator:
-    def __init__(self, length=8):
-        self.length = length
+class Indicators:
+    def __init__(self, client):
+        self.client = client
+        self.length = 8  # Para indicador OO
     
-    def calculate_movement_percentage(self, df):
-        """Calcula el porcentaje de movimiento de la vela actual"""
+    def get_klines(self, symbol, timeframe):
+        """Obtiene klines recientes, incluyendo vela actual"""
         try:
-            if len(df) < 1:
-                return 0.0
-            
-            current_candle = df.iloc[-1]
-            open_price = current_candle['Open']
-            current_price = current_candle['Close']
-            
-            if open_price == 0:
-                return 0.0
-            
-            percentage = ((current_price - open_price) / open_price) * 100
-            return percentage
-            
+            klines = self.client.get_klines(symbol=symbol, interval=timeframe, limit=100)
+            df = pd.DataFrame(klines, columns=['open_time', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset_volume', 'number_of_trades', 'taker_buy_base', 'taker_buy_quote', 'ignore'])
+            df = df.astype({'open': float, 'high': float, 'low': float, 'close': float})
+            df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
+            df.set_index('open_time', inplace=True)
+            return self.to_heikin_ashi(df)
         except Exception as e:
-            return 0.0
+            print(f"Error getting klines for {symbol} {timeframe}: {e}")
+            return pd.DataFrame()
+    
+    def to_heikin_ashi(self, df):
+        """Convierte a Heikin Ashi"""
+        ha_df = df.copy()
+        ha_df['ha_close'] = (df['open'] + df['high'] + df['low'] + df['close']) / 4
+        ha_df['ha_open'] = ((df['open'].shift(1) + df['close'].shift(1)) / 2).fillna((df['open'] + df['close']) / 2)
+        ha_df['ha_high'] = ha_df[['ha_open', 'ha_close', 'high']].max(axis=1)
+        ha_df['ha_low'] = ha_df[['ha_open', 'ha_close', 'low']].min(axis=1)
+        ha_df['open'] = ha_df['ha_open']
+        ha_df['high'] = ha_df['ha_high']
+        ha_df['low'] = ha_df['ha_low']
+        ha_df['close'] = ha_df['ha_close']
+        return ha_df[['open', 'high', 'low', 'close']]
+    
+    def calculate_oo(self, df):
+        """Indicador OO con detección yellow"""
+        if len(df) < self.length:
+            return "RED", 0.0
+        df['ys1'] = (df['high'] + df['low'] + df['close'] * 2) / 4
+        df['rk3'] = df['ys1'].ewm(span=self.length, adjust=False).mean()
+        df['rk4'] = df['ys1'].rolling(window=self.length).std().fillna(0.001)
+        df['rk5'] = (df['ys1'] - df['rk3']) * 100 / df['rk4']
+        df['rk6'] = df['rk5'].ewm(span=self.length, adjust=False).mean()
+        df['up'] = df['rk6'].ewm(span=self.length, adjust=False).mean()
+        df['down'] = df['up'].ewm(span=self.length, adjust=False).mean()
+        
+        last_up, last_down = df['up'].iloc[-1], df['down'].iloc[-1]
+        prev_up, prev_down = df['up'].iloc[-2], df['down'].iloc[-2]
+        diff = last_up - last_down
+        
+        up_changing = (prev_up > last_up) and (prev_down < last_down)
+        down_changing = (prev_up < last_up) and (prev_down > last_down)
+        is_yellow = up_changing or down_changing
+        
+        if last_up > last_down:
+            return ("YELLOW" if is_yellow else "GREEN"), diff * (0.5 if is_yellow else 1.0)
+        else:
+            return ("YELLOW" if is_yellow else "RED"), diff * (0.5 if is_yellow else 1.0)
 
-    def calculate_indicator_oo(self, df, symbol):
-        try:
-            if len(df) < self.length:
-                return "ERROR: No hay suficientes datos", 0.0
-                
-            df = df.copy()
-            
-            # Cálculos existentes
-            df['ys1'] = (df['High'] + df['Low'] + df['Close'] * 2) / 4
-            df['rk3'] = df['ys1'].ewm(span=self.length, adjust=False).mean()
-            df['rk4'] = df['ys1'].rolling(window=self.length).std().fillna(0.001)
-            df['rk5'] = np.where(df['rk4'] != 0, 
-                                (df['ys1'] - df['rk3']) * 100 / df['rk4'], 
-                                0)
-            df['rk6'] = df['rk5'].ewm(span=self.length, adjust=False).mean()
-            df['up'] = df['rk6'].ewm(span=self.length, adjust=False).mean()
-            df['down'] = df['up'].ewm(span=self.length, adjust=False).mean()
-            
-            # Analizar vela actual Y anterior
-            last_up = df['up'].iloc[-1]
-            last_down = df['down'].iloc[-1]
-            prev_up = df['up'].iloc[-2] 
-            prev_down = df['down'].iloc[-2]
-            
-            diff = last_up - last_down
-            
-            # ✅ DETECCIÓN MEJORADA DE AMARILLO
-            # Amarillo = up y down se están cruzando o hay divergencia
-            up_trend_changing = (prev_up > last_up) and (prev_down < last_down)  # up bajando, down subiendo
-            down_trend_changing = (prev_up < last_up) and (prev_down > last_down)  # up subiendo, down bajando
-            
-            is_yellow = up_trend_changing or down_trend_changing
-            
-            if last_up > last_down:
-                if is_yellow:
-                    return "YELLOW 🟡", diff * 0.5  # 50% del peso
-                else:
-                    return "GREEN 🟢", diff
-            else:
-                if is_yellow:
-                    return "YELLOW 🟡", diff * 0.5  # 50% del peso  
-                else:
-                    return "RED 🔴", diff
-                    
-        except Exception as e:
-            return f"ERROR: {str(e)}", 0.0

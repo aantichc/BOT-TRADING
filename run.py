@@ -1,10 +1,15 @@
-import sys
+# run.py
 import os
+import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+# Añade la carpeta raíz del proyecto (donde está src) al path
+# Esto es clave en Windows
+current_dir = os.path.dirname(os.path.abspath(__file__))
+src_path = os.path.join(current_dir, "src")
+sys.path.insert(0, src_path)
 
-from main import main # type: ignore
+# Ahora sí puede importar desde src
+from main import main
 
 if __name__ == "__main__":
-    print("🚀 Iniciando Trading Bot con USDC...")
     main()

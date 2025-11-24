@@ -1,50 +1,9 @@
-# ============= CONFIGURACIÓN =============
+# Archivo: config.py
 API_KEY = "F9D9iYQqpiQvZ7FqSuaGugeN1I4QfnBTMnro1SGrga84PZeC7SpXFHiwqkWBkGlo"
 API_SECRET = "yAseWTGu6vFlPKyIGkhttip23lcLVsvnybOgflFSt23EE1RjVg0mzdtTE84DBVNY"
-
-# MODO TEST - BLOQUEAR OPERACIONES REALES
-TRADING_ENABLED = True  # Cambiar a True para operar realmente
-
-# Símbolos en USDC
-SYMBOLS = ["BNBUSDC", "FETUSDC", "SOLUSDC", "XLMUSDC", "LINKUSDC"]
-LENGTH = 8
-UPDATE_INTERVAL = 2
-
-TIMEFRAMES = {
-    "30m": "30m",
-    "1h": "1h", 
-    "2h": "2h"
-}
-
-# Colores para el tema oscuro
-DARK_BG = '#0d0d0d'
-DARKER_BG = '#050505'
-DARK_FRAME = '#1a1a1a'
-DARKER_FRAME = '#141414'
-TEXT_LIGHT = '#e8e8e8'
-TEXT_GRAY = '#a0a0a0'
-TEXT_DARK_GRAY = '#666666'
-
-# Colores de estado
-GREEN = '#00cc00'
-RED = '#ff4444'
-YELLOW = '#ffcc00'
-GOLD = '#ffd700'
-BLUE = '#4488ff'
-PURPLE = '#aa44ff'
-
-# Colores de señal
-STRONG_BUY_BG = '#1a331a'
-STRONG_SELL_BG = '#331a1a'
-BULLISH_BG = '#1a2a1a'
-BEARISH_BG = '#2a1a1a'
-NEUTRAL_BG = '#2a2a2a'
-ACCOUNT_BG = '#1a1a2a'
-
-# Bordes y efectos
-BORDER_COLOR = '#333333'
-HIGHLIGHT_COLOR = '#444444'
-
-# Configuración de la gráfica
-CHART_TIMEFRAMES = ["15m", "30m", "1h", "4h", "1d", "1w"]
-DEFAULT_CHART_TIMEFRAME = "1h"
+TRADING_ENABLED = True  # True para trades reales, False para simular
+SYMBOLS = ["BNBUSDC", "FETUSDC", "SOLUSDC", "LINKUSDC", "XLMUSDC"]  # Ej. 4 símbolos → 25% max cada uno
+TIMEFRAMES = {"30m": "30m", "1h": "1h", "2h": "2h"}
+TIMEFRAME_WEIGHTS = {"30m": 0.30, "1h": 0.30, "2h": 0.40}
+UPDATE_INTERVAL = 10  # Segundos para check señales
+MIN_TRADE_DIFF = 1.0  # Mínima diferencia USD para trade (evita fees en pequeños)

@@ -1,865 +1,216 @@
+# src/gui.py - VERSIÓN DEFINITIVA CON HISTORIAL, SMOOTH Y SELECTOR DE TIMEFRAME
 import tkinter as tk
-from tkinter import ttk, scrolledtext
+from tkinter import ttk
 from datetime import datetime
-import threading
-import time
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.dates import DateFormatter
 import json
 import os
-from datetime import datetime, timedelta
+from scipy.interpolate import make_interp_spline
+import numpy as np
 
-from binance_account import BinanceAccount
-from config import *
+HISTORY_FILE = "capital_history.json"
+CHART_FILE = "capital_chart.png"
 
-class TradingBotGUI:
-    def __init__(self, root, bot_instance):
-        self.root = root
-        self.bot = bot_instance
-        self.account_manager = BinanceAccount()
-        self.balance_history = []  # Historial de balances
-        self.data_file = "balance_history.json"  # Archivo para guardar datos
-        self.load_balance_history()  # Cargar historial al iniciar
-        
-        self.setup_ui()
-        self.setup_account_updater()
-    
-    def load_balance_history(self):
-        """Carga el historial de balances desde archivo"""
-        try:
-            if os.path.exists(self.data_file):
-                with open(self.data_file, 'r') as f:
-                    data = json.load(f)
-                    # Convertir strings de fecha a objetos datetime
-                    for item in data:
-                        item['timestamp'] = datetime.fromisoformat(item['timestamp'])
-                    self.balance_history = data
-                print(f"✅ Historial cargado: {len(self.balance_history)} registros")
-            else:
-                print("📁 No se encontró archivo de historial, se creará uno nuevo")
-        except Exception as e:
-            print(f"❌ Error cargando historial: {e}")
-            self.balance_history = []
-    
-    def save_balance_history(self):
-        """Guarda el historial de balances en archivo"""
-        try:
-            # Convertir datetime a strings para JSON
-            save_data = []
-            for item in self.balance_history:
-                item_copy = item.copy()
-                item_copy['timestamp'] = item['timestamp'].isoformat()
-                save_data.append(item_copy)
-            
-            with open(self.data_file, 'w') as f:
-                json.dump(save_data, f, indent=2)
-        except Exception as e:
-            print(f"❌ Error guardando historial: {e}")
-    
-    def add_balance_record(self, total_usd):
-        """Añade un registro al historial de balances"""
-        record = {
-            'timestamp': datetime.now(),
-            'total_balance': total_usd
+class TradingGUI:
+    def __init__(self, bot):
+        self.bot = bot
+        self.bot.gui = self
+        self.update_job = None
+
+        self.root = tk.Tk()
+        self.root.title("TRADING BOT - HISTORIAL + SMOOTH + TIMEFRAMES")
+        self.root.geometry("1500x950")
+        self.root.configure(bg="#0a0a0a")
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        # Cargar historial
+        self.history = self.load_history()
+
+        # === BOTONES + SELECTOR TIMEFRAME ===
+        top = tk.Frame(self.root, bg="#0a0a0a")
+        top.pack(pady=15)
+
+        tk.Button(top, text="START", bg="#00ff00", fg="black", font=("Arial",14,"bold"), width=12, command=self.bot.start).pack(side=tk.LEFT, padx=10)
+        tk.Button(top, text="STOP", bg="#ff3333", fg="white", font=("Arial",14,"bold"), width=12, command=self.bot.stop).pack(side=tk.LEFT, padx=10)
+        tk.Button(top, text="REBALANCE", bg="#ffaa00", fg="black", font=("Arial",14,"bold"), width=15, command=self.bot.rebalance_manual).pack(side=tk.LEFT, padx=10)
+
+        tk.Label(top, text="Timeframe:", bg="#0a0a0a", fg="#00ff00", font=("Arial",12,"bold")).pack(side=tk.LEFT, padx=(30,5))
+        self.tf_var = tk.StringVar(value="30m")
+        tf_options = ["15m", "30m", "1h", "2h", "4h", "1D", "1W"]
+        ttk.Combobox(top, textvariable=self.tf_var, values=tf_options, width=8, state="readonly", font=("Consolas",11)).pack(side=tk.LEFT)
+
+        main = tk.Frame(self.root, bg="#0a0a0a")
+        main.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+
+        # === IZQUIERDA: TOKENS ===
+        left = tk.Frame(main, bg="#0a0a0a")
+        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.token_frames = {}
+        from config import SYMBOLS
+        for i, symbol in enumerate(SYMBOLS[:6]):
+            r, c = i // 2, i % 2
+            frame = self.create_token_box(left, symbol)
+            frame.grid(row=r, column=c, padx=20, pady=20, sticky="nsew")
+            self.token_frames[symbol] = frame
+        for i in range(2): left.grid_columnconfigure(i, weight=1)
+        for i in range(3): left.grid_rowconfigure(i, weight=1)
+
+        # === DERECHA: LOGS + GRÁFICO ===
+        right = tk.Frame(main, bg="#0a0a0a")
+        right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(30,0))
+
+        tk.Label(right, text="TRADES EN VIVO", bg="#0a0a0a", fg="#00ff00", font=("Arial",16,"bold")).pack(anchor="w", pady=(0,10))
+        self.log_text = tk.Text(right, height=12, bg="#111111", fg="#ffffff", font=("Consolas",11))
+        self.log_text.pack(fill=tk.BOTH, expand=True, pady=(0,15))
+
+        self.fig, self.ax = plt.subplots(figsize=(11,6), facecolor="#0a0a0a")
+        self.ax.set_facecolor("#111111")
+        self.ax.tick_params(colors='gray')
+        self.ax.spines['bottom'].set_color('gray')
+        self.ax.spines['left'].set_color('gray')
+        self.canvas = FigureCanvasTkAgg(self.fig, right)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        self.schedule_update()
+        self.root.mainloop()
+
+    def create_token_box(self, parent, symbol):
+        frame = tk.Frame(parent, bg="#1a1a1a", relief="flat", bd=2, highlightbackground="#333", highlightthickness=2)
+        frame.configure(width=340, height=240)
+        frame.pack_propagate(False)
+
+        tk.Label(frame, text=symbol.replace("USDC", ""), bg="#1a1a1a", fg="#00ffaa", font=("Arial",22,"bold")).pack(pady=(15,5))
+        price_lbl = tk.Label(frame, text="$0.0000", bg="#1a1a1a", fg="white", font=("Arial",15))
+        price_lbl.pack(pady=(0,8))
+        balance_lbl = tk.Label(frame, text="0.000000 → $0 (0.0%)", bg="#1a1a1a", fg="#bbbbbb", font=("Arial",11))
+        balance_lbl.pack(pady=(0,15))
+
+        semaforo_frame = tk.Frame(frame, bg="#1a1a1a")
+        semaforo_frame.pack()
+        canvas = tk.Canvas(semaforo_frame, width=40, height=110, bg="#1a1a1a", highlightthickness=0)
+        canvas.grid(row=0, column=0, rowspan=3)
+        c30 = canvas.create_oval(8, 8, 32, 32, fill="gray", outline="#555")
+        c1h = canvas.create_oval(8, 45, 32, 69, fill="gray", outline="#555")
+        c2h = canvas.create_oval(8, 82, 32, 106, fill="gray", outline="#555")
+        tk.Label(semaforo_frame, text="30m", bg="#1a1a1a", fg="#888", font=("Consolas",10)).grid(row=0, column=1, sticky="w", padx=8)
+        tk.Label(semaforo_frame, text="1h ", bg="#1a1a1a", fg="#888", font=("Consolas",10)).grid(row=1, column=1, sticky="w", padx=8)
+        tk.Label(semaforo_frame, text="2h ", bg="#1a1a1a", fg="#888", font=("Consolas",10)).grid(row=2, column=1, sticky="w", padx=8)
+
+        peso_lbl = tk.Label(frame, text="Peso: 0.00", bg="#1a1a1a", fg="yellow", font=("Arial",14,"bold"))
+        peso_lbl.pack(pady=(12,0))
+
+        frame.data = {
+            "symbol": symbol, "price_lbl": price_lbl, "balance_lbl": balance_lbl,
+            "canvas": canvas, "circles": {"30m": c30, "1h": c1h, "2h": c2h}, "peso_lbl": peso_lbl
         }
-        self.balance_history.append(record)
-        
-        # Mantener solo últimos 7 días de datos
-        week_ago = datetime.now() - timedelta(days=7)
-        self.balance_history = [r for r in self.balance_history if r['timestamp'] > week_ago]
-        
-        # Guardar automáticamente
-        self.save_balance_history()
+        return frame
 
-    def setup_ui(self):
-        """Configura toda la interfaz gráfica con nuevas funcionalidades"""
-        self.root.title("🤖 Trading Bot - Multiple Symbols (BINANCE) - HEIKIN ASHI")
-        self.root.geometry("1400x950")  # Más alto para la gráfica
-        self.root.configure(bg=DARK_BG)
-        
-        # Configurar tema oscuro global
-        self.setup_dark_theme()
-        
-        # Main frame
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        # Configure grid weights
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
-        main_frame.columnconfigure(0, weight=3)  # Bot trading
-        main_frame.columnconfigure(1, weight=1)  # Info cuenta
-        
-        # Title
-        title_label = tk.Label(main_frame, 
-                            text="🤖 TRADING BOT - LIVE PRICE + CANDLE % MOVEMENT - HEIKIN ASHI", 
-                            font=('Arial', 16, 'bold'),
-                            fg=GOLD,
-                            bg=DARK_BG)
-        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 15), sticky=tk.W+tk.E)
-        
-        # Subtitle
-        subtitle_label = tk.Label(main_frame,
-                                text="💰 LIVE PRICE | 📊 % CURRENT CANDLE MOVEMENT | 🕯️ HEIKIN ASHI | 💼 ACCOUNT INFO | 📈 BALANCE CHART",
-                                font=('Arial', 10),
-                                fg=TEXT_GRAY,
-                                bg=DARK_BG)
-        subtitle_label.grid(row=1, column=0, columnspan=2, pady=(0, 20), sticky=tk.W+tk.E)
-        
-        # Control frame
-        control_frame = tk.Frame(main_frame, bg=DARK_BG)
-        control_frame.grid(row=2, column=0, columnspan=2, pady=(0, 20), sticky=(tk.W, tk.E))
-        
-        # Control buttons - NUEVO BOTÓN SELL ALL
-        self.start_button = tk.Button(control_frame, 
-                                    text="▶️ START BOT", 
-                                    command=self.start_bot,
-                                    font=('Arial', 12, 'bold'),
-                                    bg=GREEN,
-                                    fg=DARK_BG,
-                                    width=15,
-                                    height=2,
-                                    relief='flat',
-                                    bd=0,
-                                    activebackground='#00aa00',
-                                    activeforeground=DARK_BG)
-        self.start_button.pack(side=tk.LEFT, padx=(0, 10))
-        
-        self.stop_button = tk.Button(control_frame, 
-                                    text="⏸️ STOP BOT", 
-                                    command=self.stop_bot,
-                                    font=('Arial', 12, 'bold'),
-                                    bg=RED,
-                                    fg=DARK_BG,
-                                    width=15,
-                                    height=2,
-                                    state=tk.DISABLED,
-                                    relief='flat',
-                                    bd=0,
-                                    activebackground='#cc0000',
-                                    activeforeground=DARK_BG)
-        self.stop_button.pack(side=tk.LEFT, padx=(0, 10))
-        
-        # NUEVO BOTÓN SELL ALL
-        self.sell_all_button = tk.Button(control_frame, 
-                                    text="💸 SELL ALL", 
-                                    command=self.sell_all_assets,
-                                    font=('Arial', 12, 'bold'),
-                                    bg=PURPLE,
-                                    fg=TEXT_LIGHT,
-                                    width=15,
-                                    height=2,
-                                    relief='flat',
-                                    bd=0,
-                                    activebackground='#9944ff',
-                                    activeforeground=TEXT_LIGHT)
-        self.sell_all_button.pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Bot status
-        self.status_label = tk.Label(control_frame,
-                                    text="🛑 BOT STOPPED",
-                                    font=('Arial', 12, 'bold'),
-                                    fg=RED,
-                                    bg=DARK_BG)
-        self.status_label.pack(side=tk.LEFT, padx=(20, 0))
-        
-        # Timing info label
-        self.timing_label = tk.Label(control_frame,
-                                text="⏱️ Timing: --",
-                                font=('Arial', 10),
-                                fg=TEXT_GRAY,
-                                bg=DARK_BG)
-        self.timing_label.pack(side=tk.LEFT, padx=(20, 0))
-        
-        # ✅ NUEVO: Indicador de MODO TEST/LIVE
-        mode_text = "🔒 MODO TEST" if not TRADING_ENABLED else "🚀 MODO LIVE"
-        mode_color = YELLOW if not TRADING_ENABLED else GREEN
-        
-        self.mode_label = tk.Label(control_frame,
-                                text=mode_text,
-                                font=('Arial', 10, 'bold'),
-                                fg=mode_color,
-                                bg=DARK_BG)
-        self.mode_label.pack(side=tk.LEFT, padx=(20, 0))
-        
-        # ============ PANEL IZQUIERDO: BOT TRADING ============
-        trading_frame = tk.Frame(main_frame, bg=DARK_BG)
-        trading_frame.grid(row=3, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 10))
-        
-        # Frames for symbol results
-        self.symbol_frames = {}
-        for i, symbol in enumerate(SYMBOLS):
-            symbol_frame = tk.Frame(trading_frame, 
-                                bg=DARK_FRAME, 
-                                relief='ridge', 
-                                bd=1,
-                                highlightbackground=BORDER_COLOR,
-                                highlightthickness=1)
-            symbol_frame.grid(row=0, column=i, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5, pady=(0, 10))
-            symbol_frame.columnconfigure(0, weight=1)
-            
-            # Symbol title
-            title_label = tk.Label(symbol_frame, 
-                                text=f"📊 {symbol}", 
-                                font=('Arial', 12, 'bold'),
-                                fg=GOLD,
-                                bg=DARK_FRAME)
-            title_label.grid(row=0, column=0, sticky=tk.W, pady=(10, 5), padx=10)
-            
-            # Current price
-            price_label = tk.Label(symbol_frame, 
-                                text="Price: --", 
-                                font=('Arial', 11, 'bold'), 
-                                fg=GOLD,
-                                bg=DARK_FRAME)
-            price_label.grid(row=1, column=0, sticky=tk.W, pady=(0, 8), padx=10)
-            
-            # Symbol information
-            time_label = tk.Label(symbol_frame, 
-                                text="Time: --:--:--", 
-                                font=('Arial', 9),
-                                fg=TEXT_DARK_GRAY,
-                                bg=DARK_FRAME)
-            time_label.grid(row=2, column=0, sticky=tk.W, pady=2, padx=10)
-            
-            # Results by timeframe
-            result_labels = {}
-            row_idx = 3
-            
-            for tf_name in TIMEFRAMES.keys():
-                label = tk.Label(symbol_frame, 
-                                text=f"{tf_name.upper():>4}: -- | %: --", 
-                                font=('Arial', 10, 'bold'),
-                                fg=TEXT_LIGHT,
-                                bg=DARK_FRAME,
-                                anchor='w')
-                label.grid(row=row_idx, column=0, sticky=tk.W, pady=1, padx=10)
-                result_labels[tf_name] = label
-                row_idx += 1
-            
-            # Trading signal
-            signal_label = tk.Label(symbol_frame, 
-                                text="SIGNAL: --", 
-                                font=('Arial', 11, 'bold'),
-                                fg=TEXT_LIGHT,
-                                bg=NEUTRAL_BG,
-                                relief='raised',
-                                bd=1)
-            signal_label.grid(row=row_idx, column=0, sticky=tk.W, pady=(8, 5), padx=10)
-            row_idx += 1
-            
-            # Candle progress
-            progress_labels = {}
-            for j, tf_name in enumerate(TIMEFRAMES.keys()):
-                label = tk.Label(symbol_frame, 
-                                text=f"{tf_name.upper()}: --", 
-                                font=('Arial', 8),
-                                fg=TEXT_DARK_GRAY,
-                                bg=DARK_FRAME)
-                label.grid(row=row_idx, column=0, sticky=tk.W, pady=1, padx=10)
-                progress_labels[tf_name] = label
-                row_idx += 1
-            
-            self.symbol_frames[symbol] = {
-                'price_label': price_label,
-                'time_label': time_label,
-                'result_labels': result_labels,
-                'signal_label': signal_label,
-                'progress_labels': progress_labels
-            }
-        
-        # Configure equal width for symbol columns
-        for i in range(len(SYMBOLS)):
-            trading_frame.columnconfigure(i, weight=1)
-        # ============ GRÁFICA MEJORADA CON TIMEFRAMES ============
-        chart_frame = tk.Frame(trading_frame, 
-                            bg=DARK_FRAME, 
-                            relief='ridge', 
-                            bd=1,
-                            highlightbackground=BORDER_COLOR,
-                            highlightthickness=1)
-        chart_frame.grid(row=2, column=0, columnspan=len(SYMBOLS), sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10, 10))
-        chart_frame.columnconfigure(0, weight=1)
-        chart_frame.rowconfigure(1, weight=1)
-        
-        # Header de la gráfica con controles
-        chart_header = tk.Frame(chart_frame, bg=DARK_FRAME)
-        chart_header.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=10, pady=5)
-        
-        chart_title = tk.Label(chart_header, 
-                            text="📈 BALANCE HISTORY", 
-                            font=('Arial', 11, 'bold'),
-                            fg=GOLD,
-                            bg=DARK_FRAME)
-        chart_title.pack(side=tk.LEFT)
-        
-        # Selector de timeframe
-        timeframe_label = tk.Label(chart_header,
-                                text="Periodo:",
-                                font=('Arial', 9),
-                                fg=TEXT_GRAY,
-                                bg=DARK_FRAME)
-        timeframe_label.pack(side=tk.LEFT, padx=(20, 5))
-        
-        self.timeframe_var = tk.StringVar(value="1h")
-        timeframe_options = ["15m", "30m", "1h", "4h", "1d", "1w"]
-        timeframe_menu = tk.OptionMenu(chart_header, self.timeframe_var, *timeframe_options,
-                                    command=self.on_timeframe_changed)
-        timeframe_menu.config(font=('Arial', 8), bg=DARK_FRAME, fg=TEXT_LIGHT, 
-                            relief='flat', bd=1, highlightthickness=0)
-        timeframe_menu.pack(side=tk.LEFT)
-        
-        # Botón actualizar gráfica
-        refresh_chart_btn = tk.Button(chart_header,
-                                    text="🔄 Actualizar",
-                                    command=self.refresh_chart,
-                                    font=('Arial', 8),
-                                    bg=PURPLE,
-                                    fg=TEXT_LIGHT,
-                                    relief='flat',
-                                    bd=0)
-        refresh_chart_btn.pack(side=tk.LEFT, padx=(10, 0))
-        
-        # Info de la gráfica
-        self.chart_info_label = tk.Label(chart_header,
-                                        text="Cargando...",
-                                        font=('Arial', 8),
-                                        fg=TEXT_GRAY,
-                                        bg=DARK_FRAME)
-        self.chart_info_label.pack(side=tk.RIGHT)
-        
-        # Canvas para la gráfica
-        self.chart_canvas = tk.Canvas(chart_frame, 
-                                    bg=DARKER_BG, 
-                                    height=150,
-                                    highlightthickness=0)
-        self.chart_canvas.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=10, pady=(0, 10))
-        
-        # ============ PANEL DERECHO: INFORMACIÓN DE CUENTA ============
-        account_frame = tk.Frame(main_frame, bg=DARK_BG)
-        account_frame.grid(row=3, column=1, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        # Account info frame
-        self.account_info_frame = tk.Frame(account_frame, 
-                                        bg=ACCOUNT_BG, 
-                                        relief='ridge', 
-                                        bd=2,
-                                        highlightbackground=PURPLE,
-                                        highlightthickness=1)
-        self.account_info_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-        
-        # Account title
-        account_title = tk.Label(self.account_info_frame, 
-                            text="💼 BINANCE ACCOUNT", 
-                            font=('Arial', 14, 'bold'),
-                            fg=PURPLE,
-                            bg=ACCOUNT_BG)
-        account_title.pack(pady=(15, 10))
-        
-        # Total balance
-        self.total_balance_label = tk.Label(self.account_info_frame, 
-                                        text="Total: $--", 
-                                        font=('Arial', 18, 'bold'),
-                                        fg=GOLD,
-                                        bg=ACCOUNT_BG)
-        self.total_balance_label.pack(pady=(0, 15))
-        
-        # Last update time
-        self.account_update_label = tk.Label(self.account_info_frame, 
-                                        text="Last update: --", 
-                                        font=('Arial', 9),
-                                        fg=TEXT_GRAY,
-                                        bg=ACCOUNT_BG)
-        self.account_update_label.pack(pady=(0, 10))
-        
-        # Balances details frame
-        balances_frame = tk.Frame(self.account_info_frame, bg=ACCOUNT_BG)
-        balances_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-        
-        # Scrollable text for balances
-        self.balances_text = scrolledtext.ScrolledText(balances_frame, 
-                                                    height=8, 
-                                                    bg=DARKER_BG,
-                                                    fg=TEXT_LIGHT,
-                                                    font=('Consolas', 8),
-                                                    relief='flat',
-                                                    bd=0,
-                                                    wrap=tk.WORD)
-        self.balances_text.pack(fill=tk.BOTH, expand=True)
-        self.balances_text.config(state=tk.DISABLED)
-        
-        # Account control buttons frame
-        account_buttons_frame = tk.Frame(self.account_info_frame, bg=ACCOUNT_BG)
-        account_buttons_frame.pack(fill=tk.X, padx=20, pady=10)
-        
-        # Refresh account button
-        refresh_button = tk.Button(account_buttons_frame, 
-                                text="🔄 Refresh Account", 
-                                command=self.refresh_account_info,
-                                font=('Arial', 10, 'bold'),
-                                bg=PURPLE,
-                                fg=TEXT_LIGHT,
-                                relief='flat',
-                                bd=0,
-                                width=15)
-        refresh_button.pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Manual rebalance button
-        self.rebalance_button = tk.Button(account_buttons_frame, 
-                                        text="⚖️ Rebalancear", 
-                                        command=self.manual_rebalance,
-                                        font=('Arial', 10, 'bold'),
-                                        bg=GREEN,
-                                        fg=DARK_BG,
-                                        relief='flat',
-                                        bd=0,
-                                        width=15)
-        self.rebalance_button.pack(side=tk.LEFT)
-        
-        # ============ CONSOLA EN PARTE INFERIOR ============
-        console_frame = tk.Frame(trading_frame, 
-                                bg=DARK_FRAME, 
-                                relief='ridge', 
-                                bd=1,
-                                highlightbackground=BORDER_COLOR,
-                                highlightthickness=1)
-        console_frame.grid(row=3, column=0, columnspan=len(SYMBOLS), sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10, 0))
-        console_frame.columnconfigure(0, weight=1)
-        console_frame.rowconfigure(0, weight=1)
-        trading_frame.rowconfigure(3, weight=1)
-        
-        log_title = tk.Label(console_frame, 
-                            text="📝 TRADING LOGS", 
-                            font=('Arial', 11, 'bold'),
-                            fg=GOLD,
-                            bg=DARK_FRAME)
-        log_title.grid(row=0, column=0, sticky=tk.W, padx=10, pady=5)
-        
-        # Scrollable text area
-        self.log_text = scrolledtext.ScrolledText(console_frame, 
-                                                height=8, 
-                                                bg=DARKER_BG,
-                                                fg=TEXT_LIGHT,
-                                                font=('Consolas', 8),
-                                                relief='flat',
-                                                bd=0,
-                                                insertbackground=TEXT_LIGHT,
-                                                selectbackground=HIGHLIGHT_COLOR)
-        self.log_text.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=10, pady=(0, 10))
-        
-        # Configure tags for log colors
-        self.log_text.tag_config('GREEN', foreground=GREEN)
-        self.log_text.tag_config('RED', foreground=RED)
-        self.log_text.tag_config('ERROR', foreground=RED)
-        self.log_text.tag_config('INFO', foreground=BLUE)
-        self.log_text.tag_config('WARNING', foreground=YELLOW)
-        self.log_text.tag_config('BTC', foreground='#f7931a')
-        self.log_text.tag_config('FET', foreground='#00d1b2')
-        self.log_text.tag_config('XLM', foreground='#14b6ff')
-        self.log_text.tag_config('LINK', foreground='#2a5caa')
-        self.log_text.tag_config('SOL', foreground='#00ffbd')
-        self.log_text.tag_config('SUCCESS', foreground=GREEN)
-        self.log_text.tag_config('HEADER', foreground=GOLD, font=('Consolas', 8, 'bold'))
-        self.log_text.tag_config('TIMING', foreground=TEXT_GRAY)
-        self.log_text.tag_config('TRADE', foreground=PURPLE, font=('Consolas', 8, 'bold'))
-        self.log_text.tag_config('SELL_ALL', foreground=RED, font=('Consolas', 8, 'bold'))
-        self.log_text.tag_config('TEST_MODE', foreground=YELLOW, font=('Consolas', 8, 'bold'))
+    def load_history(self):
+        if os.path.exists(HISTORY_FILE):
+            with open(HISTORY_FILE, "r") as f:
+                data = json.load(f)
+                return [(datetime.fromisoformat(d[0]), d[1]) for d in data]
+        return []
 
-    def setup_dark_theme(self):
-        """Configura el tema oscuro globalmente"""
-        self.root.option_add('*Background', DARK_BG)
-        self.root.option_add('*Foreground', TEXT_LIGHT)
-        self.root.option_add('*selectBackground', HIGHLIGHT_COLOR)
-        self.root.option_add('*selectForeground', TEXT_LIGHT)
-        
-        self.style = ttk.Style()
-        self.style.theme_use('clam')
-        
-        self.style.configure('.', background=DARK_BG, foreground=TEXT_LIGHT)
-        self.style.configure('TFrame', background=DARK_BG)
-        self.style.configure('TLabel', background=DARK_BG, foreground=TEXT_LIGHT)
-        self.style.configure('TLabelframe', background=DARK_BG, foreground=TEXT_LIGHT)
-        self.style.configure('TLabelframe.Label', background=DARK_BG, foreground=TEXT_LIGHT)
-        self.style.configure('TButton', background=DARK_FRAME, foreground=TEXT_LIGHT)
-        self.style.configure('TScrollbar', background=DARK_FRAME, troughcolor=DARKER_BG)
+    def save_history(self):
+        with open(HISTORY_FILE, "w") as f:
+            json.dump([(dt.isoformat(), val) for dt, val in self.history], f)
+        # Guardar gráfico
+        self.fig.savefig(CHART_FILE, dpi=150, facecolor="#0a0a0a")
 
-    def on_timeframe_changed(self, selected_timeframe):
-        """Cuando se cambia el timeframe de la gráfica"""
-        self.refresh_chart()
-
-    def refresh_chart(self):
-        """Actualiza la gráfica con el timeframe seleccionado"""
-        if hasattr(self, 'balance_history') and self.balance_history:
-            self.draw_balance_chart()
-        else:
-            self.chart_info_label.config(text="Sin datos históricos")
-
-    def draw_balance_chart(self):
-        """Dibuja la gráfica con el timeframe seleccionado"""
-        if not self.balance_history:
-            self.chart_canvas.delete("all")
-            self.chart_canvas.create_text(100, 75, text="No hay datos históricos", fill=TEXT_GRAY)
-            return
-        
-        self.chart_canvas.delete("all")
-        
-        width = self.chart_canvas.winfo_width()
-        height = self.chart_canvas.winfo_height()
-        
-        if width < 50 or height < 50:
-            return
-        
-        # Filtrar datos según el timeframe seleccionado
-        filtered_data = self.filter_data_by_timeframe(self.balance_history)
-        
-        if not filtered_data:
-            self.chart_canvas.create_text(width//2, height//2, text="No hay datos para este periodo", fill=TEXT_GRAY)
-            return
-        
-        balances = [r['total_balance'] for r in filtered_data]
-        timestamps = [r['timestamp'] for r in filtered_data]
-        
-        min_balance = min(balances)
-        max_balance = max(balances)
-        balance_range = max_balance - min_balance
-        
-        if balance_range == 0:
-            balance_range = 1
-        
-        # Dibujar ejes
-        self.chart_canvas.create_line(50, height-30, width-10, height-30, fill=TEXT_GRAY, width=1)  # Eje X
-        self.chart_canvas.create_line(50, 10, 50, height-30, fill=TEXT_GRAY, width=1)  # Eje Y
-        
-        # Dibujar línea de balance
-        points = []
-        for i, record in enumerate(filtered_data):
-            x = 50 + (i / (len(filtered_data) - 1)) * (width - 60) if len(filtered_data) > 1 else 50
-            y = height - 30 - ((record['total_balance'] - min_balance) / balance_range) * (height - 50)
-            points.extend([x, y])
-        
-        if len(points) >= 4:
-            # Línea principal
-            self.chart_canvas.create_line(points, fill=GREEN, width=2, smooth=True)
-            
-            # Puntos en los datos
-            for i in range(0, len(points), 2):
-                if i == 0 or i == len(points)-2:  # Primer y último punto
-                    self.chart_canvas.create_oval(points[i]-3, points[i+1]-3, 
-                                                points[i]+3, points[i+1]+3, 
-                                                fill=GREEN, outline=GREEN)
-        
-        # Información de la gráfica
-        current_balance = filtered_data[-1]['total_balance'] if filtered_data else 0
-        initial_balance = filtered_data[0]['total_balance'] if filtered_data else 0
-        profit_loss = current_balance - initial_balance
-        profit_loss_pct = (profit_loss / initial_balance * 100) if initial_balance > 0 else 0
-        
-        color = GREEN if profit_loss >= 0 else RED
-        symbol = "↗️" if profit_loss >= 0 else "↘️"
-        
-        info_text = f"Actual: ${current_balance:,.2f} | {symbol} ${profit_loss:+,.2f} ({profit_loss_pct:+.1f}%)"
-        self.chart_info_label.config(text=info_text, fg=color)
-        
-        # Leyenda de ejes
-        self.chart_canvas.create_text(width//2, height-15, 
-                                     text=self.get_timeframe_display_name(), 
-                                     fill=TEXT_GRAY, font=('Arial', 8))
-        
-        # Valores en eje Y
-        y_step = (max_balance - min_balance) / 4
-        for i in range(5):
-            value = min_balance + i * y_step
-            y = height - 30 - (i * (height - 50) / 4)
-            self.chart_canvas.create_text(45, y, text=f"${value:,.0f}", 
-                                         fill=TEXT_GRAY, font=('Arial', 7), anchor='e')
-
-    def filter_data_by_timeframe(self, data):
-        """Filtra los datos según el timeframe seleccionado"""
-        if not data:
-            return []
-        
-        timeframe = self.timeframe_var.get()
-        now = datetime.now()
-        
-        if timeframe == "15m":
-            cutoff = now - timedelta(hours=6)  # 6 horas de datos
-        elif timeframe == "30m":
-            cutoff = now - timedelta(hours=12)  # 12 horas
-        elif timeframe == "1h":
-            cutoff = now - timedelta(days=1)  # 1 día
-        elif timeframe == "4h":
-            cutoff = now - timedelta(days=3)  # 3 días
-        elif timeframe == "1d":
-            cutoff = now - timedelta(days=7)  # 1 semana
-        elif timeframe == "1w":
-            cutoff = now - timedelta(days=30)  # 1 mes
-        else:
-            cutoff = now - timedelta(days=1)  # Default
-        
-        filtered = [r for r in data if r['timestamp'] > cutoff]
-        
-        # Limitar número de puntos para mejor visualización
-        max_points = 50
-        if len(filtered) > max_points:
-            step = len(filtered) // max_points
-            filtered = filtered[::step]
-        
-        return filtered
-
-    def get_timeframe_display_name(self):
-        """Obtiene el nombre display del timeframe"""
-        names = {
-            "15m": "Últimas 6 horas (15m)",
-            "30m": "Últimas 12 horas (30m)", 
-            "1h": "Último día (1h)",
-            "4h": "Últimos 3 días (4h)",
-            "1d": "Última semana (1d)",
-            "1w": "Último mes (1w)"
-        }
-        return names.get(self.timeframe_var.get(), self.timeframe_var.get())
-
-    def setup_account_updater(self):
-        """Configura la actualización automática de la información de la cuenta"""
-        self.refresh_account_info()  # Primera actualización
-        # Programar actualización cada 30 segundos
-        self.root.after(30000, self.setup_account_updater)
-
-    def refresh_account_info(self):
-        """Actualiza la información de la cuenta de Binance"""
-        def update():
-            total_usd, balances_info = self.account_manager.get_spot_balance_usd()
-            
-            # Actualizar en el hilo principal
-            self.root.after(0, lambda: self.update_account_display(total_usd, balances_info))
-        
-        # Ejecutar en hilo separado para no bloquear la UI
-        threading.Thread(target=update, daemon=True).start()
-
-    def update_account_display(self, total_usd, balances_info):
-        """Actualiza la visualización de la información de la cuenta"""
-        # Actualizar balance total
-        if isinstance(total_usd, (int, float)):
-            self.total_balance_label.config(text=f"Total: ${total_usd:,.2f}")
-            # Añadir al historial y actualizar gráfica
-            self.add_balance_record(total_usd)
-            self.root.after(100, self.draw_balance_chart)  # Dibujar después de un pequeño delay
-        else:
-            self.total_balance_label.config(text=f"Total: {total_usd}")
-        
-        # Actualizar tiempo de última actualización
-        current_time = datetime.now().strftime('%H:%M:%S')
-        self.account_update_label.config(text=f"Last update: {current_time}")
-        
-        # Actualizar detalles de balances
-        self.balances_text.config(state=tk.NORMAL)
-        self.balances_text.delete(1.0, tk.END)
-        
-        if isinstance(balances_info, list):
-            for balance in balances_info:
-                self.balances_text.insert(tk.END, f"• {balance}\n")
-        else:
-            self.balances_text.insert(tk.END, f"• {balances_info}\n")
-        
-        self.balances_text.config(state=tk.DISABLED)
-
-    def manual_rebalance(self):
-        """Rebalanceo manual del portfolio usando señales REALES"""
-        if self.bot and self.bot.capital_manager:
-            self.log_message("🔄 REBALANCEO MANUAL FORZADO INICIADO...", 'INFO')
-            
-            def execute_manual_rebalance():
-                try:
-                    # Obtener señales y precios ACTUALES del bot
-                    all_signals = {}
-                    all_prices = {}
-                    
-                    for symbol in SYMBOLS:
-                        try:
-                            # Obtener precio actual
-                            current_price = self.bot.get_current_price(symbol)
-                            all_prices[symbol] = current_price
-                            
-                            # Obtener señales REALES del bot si está corriendo
-                            if self.bot.running and hasattr(self.bot, 'current_analysis'):
-                                # Intentar obtener análisis actual del bot
-                                # Esto requiere que el bot almacene sus análisis recientes
-                                if symbol in self.bot.current_analysis:
-                                    all_signals[symbol] = self.bot.current_analysis[symbol]
-                                else:
-                                    # Fallback: obtener datos en tiempo real
-                                    results, _, _ = self.bot.analyze_symbol(symbol)
-                                    all_signals[symbol] = results
-                            else:
-                                # Si el bot no está corriendo, obtener análisis fresco
-                                results, _, _ = self.bot.analyze_symbol(symbol)
-                                all_signals[symbol] = results
-                                
-                        except Exception as e:
-                            self.log_message(f"❌ Error obteniendo datos de {symbol}: {str(e)}", 'ERROR')
-                            # En caso de error, usar neutral como fallback
-                            all_signals[symbol] = {"30m": "NEUTRAL", "1h": "NEUTRAL", "2h": "NEUTRAL"}
-                            all_prices[symbol] = 0.0
-                    
-                    # Forzar rebalanceo manual con señales REALES
-                    success, message = self.bot.capital_manager.rebalance_portfolio(all_signals, all_prices, manual_rebalance=True)
-                    self.log_message(f"⚖️ {message}", 'TRADE')
-                    
-                    if success:
-                        self.log_message("✅ REBALANCEO MANUAL COMPLETADO", 'SUCCESS')
-                    else:
-                        self.log_message("❌ REBALANCEO MANUAL FALLIDO", 'ERROR')
-                        
-                except Exception as e:
-                    self.log_message(f"❌ Error en rebalanceo manual: {str(e)}", 'ERROR')
-            
-            # Ejecutar en hilo separado
-            threading.Thread(target=execute_manual_rebalance, daemon=True).start()
-        else:
-            self.log_message("❌ Bot no disponible para rebalanceo", 'ERROR')
-    def sell_all_assets(self):
-        """Vende todos los assets y convierte todo a USDC"""
-        def execute_sell_all():
-            self.log_message("💸 INICIANDO VENTA TOTAL DE TODOS LOS ASSETS...", 'SELL_ALL')
-            
-            # Detener el bot si está corriendo
-            if self.bot and self.bot.running:
-                self.bot.stop_bot()
-                self.log_message("🛑 Bot detenido para venta total", 'INFO')
-                time.sleep(1)
-            
-            total_sold = 0
-            assets_sold = 0
-            
-            for symbol in SYMBOLS:
-                try:
-                    # Obtener balance del asset
-                    asset_balance = self.account_manager.get_symbol_balance(symbol)
-                    current_price = self.account_manager.get_current_price(symbol)
-                    
-                    if asset_balance > 0 and current_price > 0:
-                        self.log_message(f"💰 Vendiendo {asset_balance:.6f} {symbol}...", 'SELL_ALL')
-                        
-                        # Vender el asset
-                        success, message = self.account_manager.sell_market(symbol, asset_balance)
-                        
-                        if success:
-                            usd_value = asset_balance * current_price
-                            total_sold += usd_value
-                            assets_sold += 1
-                            self.log_message(f"✅ {message}", 'SUCCESS')
-                        else:
-                            self.log_message(f"❌ Error vendiendo {symbol}: {message}", 'ERROR')
-                    
-                    time.sleep(0.5)  # Esperar entre órdenes
-                    
-                except Exception as e:
-                    self.log_message(f"❌ Error procesando {symbol}: {str(e)}", 'ERROR')
-            
-            # Actualizar información de cuenta
-            self.refresh_account_info()
-            
-            if assets_sold > 0:
-                self.log_message(f"🎉 VENTA TOTAL COMPLETADA: {assets_sold} assets vendidos por ${total_sold:.2f} USDC", 'SELL_ALL')
-            else:
-                self.log_message("ℹ️ No se encontraron assets para vender", 'INFO')
-        
-        # Ejecutar en hilo separado
-        threading.Thread(target=execute_sell_all, daemon=True).start()
-
-    def start_bot(self):
-        """Inicia el bot a través de la instancia del bot"""
-        if self.bot:
-            self.bot.start_bot()
-    
-    def stop_bot(self):
-        """Detiene el bot a través de la instancia del bot"""
-        if self.bot:
-            self.bot.stop_bot()
-
-    # Métodos de actualización de UI que el bot llamará
-    def update_display_header(self):
-        """Actualiza información general en la interfaz"""
-        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        for symbol in SYMBOLS:
-            self.symbol_frames[symbol]['time_label'].config(text=f"Time: {current_time}")
-    
-    def update_all_results(self, all_results, all_progresses, all_signals, all_prices, all_percentages):
-        """Actualiza resultados de todos los símbolos en la interfaz gráfica"""
-        for symbol in SYMBOLS:
-            results = all_results[symbol]
-            progresses = all_progresses[symbol]
-            signal = all_signals[symbol]
-            price = all_prices[symbol]
-            percentages = all_percentages[symbol]
-            
-            self.update_symbol_results(symbol, results, progresses, signal, price, percentages)
-    
-    def update_symbol_results(self, symbol, results, progresses, signal, price, percentages):
-        """Actualiza resultados de un símbolo específico"""
-        frame_data = self.symbol_frames[symbol]
-        
-        # Update current price
-        frame_data['price_label'].config(text=f"Price: ${price:.4f}")
-        
-        # Update results by timeframe
-        for tf_name, color in results.items():
-            label = frame_data['result_labels'][tf_name]
-            percentage = percentages.get(tf_name, 0.0)
-            
-            label_text = f"{tf_name.upper():>4}: {color} | %: {percentage:+.2f}%"
-            label.config(text=label_text)
-            
-            if "GREEN" in color:
-                label.config(fg=GREEN, bg=DARK_FRAME)
-            elif "YELLOW" in color:
-                label.config(fg=YELLOW, bg=DARK_FRAME)
-            elif "RED" in color:
-                label.config(fg=RED, bg=DARK_FRAME)
-            else:
-                label.config(fg=TEXT_GRAY, bg=DARK_FRAME)
-        
-        # Update progresses
-        for tf_name, progress in progresses.items():
-            label = frame_data['progress_labels'][tf_name]
-            label.config(text=f"{tf_name.upper()}: {progress}")
-        
-        # Update trading signal
-        frame_data['signal_label'].config(text=f"SIGNAL: {signal}")
-        
-        if "STRONG_BUY" in signal:
-            frame_data['signal_label'].config(fg=GREEN, bg=STRONG_BUY_BG)
-        elif "STRONG_SELL" in signal:
-            frame_data['signal_label'].config(fg=RED, bg=STRONG_SELL_BG)
-        elif "BULLISH" in signal:
-            frame_data['signal_label'].config(fg=GREEN, bg=BULLISH_BG)
-        elif "BEARISH" in signal:
-            frame_data['signal_label'].config(fg=RED, bg=BEARISH_BG)
-        elif "YELLOW" in signal:
-            frame_data['signal_label'].config(fg=YELLOW, bg=NEUTRAL_BG)
-        else:
-            frame_data['signal_label'].config(fg=YELLOW, bg=NEUTRAL_BG)
-    
-    def update_timing_display(self, execution_time, sleep_time, drift):
-        """Actualiza la información de timing en la interfaz"""
-        timing_text = f"⏱️ Exec: {execution_time:.3f}s | Sleep: {sleep_time:.3f}s | Drift: {drift:+.3f}s"
-        self.timing_label.config(text=timing_text)
-    
-    def update_bot_status(self, running, counter=None):
-        """Actualiza el estado del bot en la interfaz"""
-        if running:
-            self.status_label.config(text="🟢 BOT RUNNING", fg=GREEN)
-            self.start_button.config(state=tk.DISABLED)
-            self.stop_button.config(state=tk.NORMAL)
-        else:
-            self.status_label.config(text="🛑 BOT STOPPED", fg=RED)
-            self.start_button.config(state=tk.NORMAL)
-            self.stop_button.config(state=tk.DISABLED)
-            if counter is not None:
-                self.timing_label.config(text="⏱️ Timing: --")
-    
-    def log_message(self, message, tag=None):
-        """Añade mensaje al console log"""
-        timestamp = datetime.now().strftime('%H:%M:%S')
-        log_entry = f"[{timestamp}] {message}\n"
-        
-        self.log_text.insert(tk.END, log_entry, tag)
+    def log_trade(self, msg, color="white"):
+        ts = datetime.now().strftime("%H:%M:%S")
+        tag = "green" if color == 'GREEN' else "red" if color == 'RED' else "white"
+        self.log_text.insert(tk.END, f"[{ts}] {msg}\n", tag)
+        self.log_text.tag_config("green", foreground="#00ff88")
+        self.log_text.tag_config("red", foreground="#ff4444")
         self.log_text.see(tk.END)
-        self.root.update_idletasks()
+
+    def schedule_update(self):
+        if self.update_job:
+            self.root.after_cancel(self.update_job)
+        self.update_job = self.root.after(5000, self.update_ui)
+    def update_ui(self):
+        try:
+            if not self.bot.running:
+                self.schedule_update()
+                return
+
+            total_usd = self.bot.account.get_balance_usdc()
+            now = datetime.now()
+            self.history.append((now, total_usd))
+            self.save_history()  # Guarda cada 5 segundos
+
+            # IMPORT LOCAL PARA timedelta (FIX DEL ERROR)
+            from datetime import timedelta
+
+            # Filtrar por timeframe
+            tf = self.tf_var.get()
+            cutoff = now
+            if tf == "15m": cutoff = now - timedelta(minutes=15)
+            elif tf == "30m": cutoff = now - timedelta(minutes=30)
+            elif tf == "1h": cutoff = now - timedelta(hours=1)
+            elif tf == "2h": cutoff = now - timedelta(hours=2)
+            elif tf == "4h": cutoff = now - timedelta(hours=4)
+            elif tf == "1D": cutoff = now - timedelta(days=1)
+            elif tf == "1W": cutoff = now - timedelta(weeks=1)
+
+            filtered = [(t, v) for t, v in self.history if t >= cutoff]
+            if not filtered:
+                filtered = self.history[-1:]
+
+            times, values = zip(*filtered)
+            self.ax.clear()
+            if len(times) > 3:
+                x_num = np.array([t.timestamp() for t in times])
+                x_smooth = np.linspace(x_num.min(), x_num.max(), 300)
+                spl = make_interp_spline(x_num, values, k=3)
+                y_smooth = spl(x_smooth)
+                smooth_times = [datetime.fromtimestamp(ts) for ts in x_smooth]
+                self.ax.plot(smooth_times, y_smooth, color="#00ff88", linewidth=3)
+            else:
+                self.ax.plot(times, values, color="#00ff88", linewidth=3)
+
+            self.ax.set_title(f"Capital Total: ${total_usd:,.2f}", color="white", fontsize=16)
+            self.ax.set_facecolor("#111111")
+            self.ax.grid(True, alpha=0.2, color="#333")
+            self.canvas.draw()
+
+            # Actualizar tokens
+            for frame in self.token_frames.values():
+                d = frame.data
+                symbol = d["symbol"]
+                try:
+                    signals = self.bot.manager.get_signals(symbol)
+                    weight = self.bot.manager.calculate_weight(signals)
+                    price = self.bot.account.get_current_price(symbol)
+                    balance = self.bot.account.get_symbol_balance(symbol)
+                    usd = balance * price
+                    pct = (usd / total_usd * 100) if total_usd > 0 else 0
+
+                    d["price_lbl"].config(text=f"${price:,.4f}")
+                    d["balance_lbl"].config(text=f"{balance:.6f} → ${usd:,.0f} ({pct:.1f}%)")
+
+                    for tf_t, cid in d["circles"].items():
+                        col = {"GREEN": "#00ff00", "YELLOW": "#ffff00", "RED": "#ff0000"}.get(signals.get(tf_t), "gray")
+                        d["canvas"].itemconfig(cid, fill=col)
+
+                    color = "#00ff00" if weight >= 0.8 else "#ffff00" if weight >= 0.5 else "#ff8800" if weight >= 0.3 else "#ff4444"
+                    d["peso_lbl"].config(text=f"Peso: {weight:.2f}", fg=color)
+                except Exception as e:
+                    print(f"Error updating {symbol}: {e}")  # Debug temporal
+
+        except Exception as e:
+            print(f"Error in update_ui: {e}")  # Debug temporal
+
+        self.schedule_update()
+        
+    def on_close(self):
+        if self.update_job:
+            self.root.after_cancel(self.update_job)
+        self.save_history()
+        self.bot.stop()
+        self.root.destroy()
