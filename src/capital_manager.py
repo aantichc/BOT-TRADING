@@ -36,7 +36,7 @@ class CapitalManager:
         changed = abs(new_weight - old) > 0.0
         self.last_weights[symbol] = new_weight
         return changed
-    
+
     def rebalance(self, manual=False):
         total_usd = self.account.get_balance_usdc()
         if total_usd <= 0:
@@ -46,7 +46,19 @@ class CapitalManager:
         for symbol in SYMBOLS:
             signals = self.get_signals(symbol)
             weight = self.calculate_weight(signals)
-            if self.has_changed(symbol, weight) or manual:
+            
+            # ✅ DETECTAR CAMBIO DE SEÑAL
+            old_weight = self.last_weights.get(symbol, 0.0)
+            signal_changed = self.has_changed(symbol, weight)
+            
+            if signal_changed or manual:
+                # ✅ NOTIFICAR CAMBIO DE SEÑAL EN LOGS
+                if signal_changed and not manual:
+                    signal_change_msg = self._get_signal_change_message(symbol, signals, old_weight, weight)
+                    actions.append(signal_change_msg)
+                    if self.gui:
+                        self.gui.log_trade(signal_change_msg, 'BLUE')
+                
                 target_usd = total_usd * self.base_allocation * min(1.0, weight)
                 current_balance = self.account.get_symbol_balance(symbol)
                 price = self.account.get_current_price(symbol)
@@ -58,7 +70,6 @@ class CapitalManager:
                         # COMPRA
                         success, msg = self.account.buy_market(symbol, diff_usd)
                         if success:
-                            # Log detallado de compra
                             log_msg = f"🟢 COMPRA {symbol}: ${diff_usd:.2f} | Target: ${target_usd:.2f} | Peso: {weight:.2f}"
                             actions.append(log_msg)
                             if self.gui:
@@ -73,7 +84,6 @@ class CapitalManager:
                         quantity = abs(diff_usd) / price
                         success, msg = self.account.sell_market(symbol, quantity)
                         if success:
-                            # Log detallado de venta
                             log_msg = f"🔴 VENTA {symbol}: {quantity:.6f} (${abs(diff_usd):.2f}) | Peso: {weight:.2f}"
                             actions.append(log_msg)
                             if self.gui:
@@ -86,3 +96,39 @@ class CapitalManager:
         
         return actions if actions else "No ajustes necesarios"
 
+    def _get_signal_change_message(self, symbol, signals, old_weight, new_weight):
+        """Genera mensaje de cambio de señal"""
+        # Determinar señal anterior
+        old_signal = self._weight_to_signal(old_weight)
+        new_signal = self._weight_to_signal(new_weight)
+        
+        # Obtener timeframes con cambios
+        timeframe_changes = []
+        for tf in signals:
+            signal_char = "🟢" if signals[tf] == "GREEN" else "🟡" if signals[tf] == "YELLOW" else "🔴"
+            timeframe_changes.append(f"{tf}{signal_char}")
+        
+        timeframes_str = " ".join(timeframe_changes)
+        
+        if new_weight > old_weight:
+            direction = "📈 MEJORÓ"
+            color_indicator = "🟢"
+        elif new_weight < old_weight:
+            direction = "📉 EMPEORÓ" 
+            color_indicator = "🔴"
+        else:
+            direction = "🔄 CAMBIÓ"
+            color_indicator = "🟡"
+        
+        return f"{color_indicator} SEÑAL {symbol}: {direction} | {old_signal} → {new_signal} | Peso: {old_weight:.2f} → {new_weight:.2f} | {timeframes_str}"
+
+    def _weight_to_signal(self, weight):
+        """Convierte peso numérico a texto de señal"""
+        if weight >= 0.8:
+            return "FUERTE_COMPRA"
+        elif weight >= 0.5:
+            return "COMPRA"
+        elif weight >= 0.3:
+            return "NEUTRAL"
+        else:
+            return "VENTA"

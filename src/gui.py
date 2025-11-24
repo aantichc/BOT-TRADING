@@ -470,10 +470,9 @@ class ModernTradingGUI:
 
     def setup_log_tags(self):
         """Configura los tags de color para el log"""
-        # Definir colores para diferentes tipos de mensajes
         self.log_text.tag_config('green_log', foreground="#00ff88")   # Compras/éxito
         self.log_text.tag_config('red_log', foreground="#ff4444")     # Ventas/errores
-        self.log_text.tag_config('blue_log', foreground="#0088ff")    # Información
+        self.log_text.tag_config('blue_log', foreground="#0088ff")    # Cambios de señal ← NUEVO
         self.log_text.tag_config('yellow_log', foreground="#ffaa00")  # Advertencias
         self.log_text.tag_config('white_log', foreground="#ffffff")   # Normal
 
