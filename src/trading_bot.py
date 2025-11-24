@@ -21,16 +21,16 @@ class TradingBot:
         self.running = False
         self.thread = None
         self.force_stop = False  # ✅ NUEVO: Bandera de parada forzosa
-    
     def start(self):
         if not self.running:
             self.running = True
-            self.force_stop = False  # ✅ Resetear bandera
             self.thread = threading.Thread(target=self.loop, daemon=True)
             self.thread.start()
-            logging.info("Bot started")
+            print("🤖 Bot iniciado")  # ← DEBUG
             if self.gui: 
-                self.gui.log_trade("Bot started", 'GREEN')
+                self.gui.log_trade("🤖 Bot iniciado", 'GREEN')
+            else:
+                print("❌ GUI no conectada al bot")  # ← DEBUG
     
     def stop(self):
         """Parada normal"""
@@ -38,27 +38,30 @@ class TradingBot:
         logging.info("Bot stopped")
         if self.gui: 
             self.gui.log_trade("Bot stopped", 'RED')
-    
+   
     def stop_completely(self):
-        """✅ NUEVO: Parada completa para cerrar la aplicación"""
-        print("Deteniendo bot completamente...")
-        self.force_stop = True  # ✅ Activar bandera de parada forzosa
+        """Parada completa para reinicio de aplicación"""
+        print("🛑 Deteniendo bot completamente para reinicio...")
+        self.force_stop = True
         self.running = False
         
-        # Esperar a que el hilo termine (máximo 3 segundos)
-        if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=3.0)
-            if self.thread.is_alive():
-                print("Hilo del bot aún activo, forzando cierre...")
-        
-        # Cerrar conexión de Binance
+        # Detener inmediatamente cualquier operación en curso
         try:
+            # Cerrar conexiones de Binance
             self.client.close_connection()
-            print("Conexión de Binance cerrada")
-        except:
-            pass
+            print("✅ Conexión de Binance cerrada")
+        except Exception as e:
+            print(f"⚠️ Error cerrando conexión: {e}")
         
-        logging.info("Bot completamente detenido")
+        # Esperar a que el hilo termine (pero no demasiado)
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=2.0)  # Timeout más corto para reinicio rápido
+            if self.thread.is_alive():
+                print("⚠️ Hilo del bot aún activo, forzando cierre...")
+            else:
+                print("✅ Hilo del bot terminado")
+        
+        print("✅ Bot listo para reinicio")
     
     def rebalance_manual(self):
         try:

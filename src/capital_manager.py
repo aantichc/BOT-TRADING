@@ -55,13 +55,34 @@ class CapitalManager:
                 
                 if abs(diff_usd) > MIN_TRADE_DIFF:
                     if diff_usd > 0:
+                        # COMPRA
                         success, msg = self.account.buy_market(symbol, diff_usd)
+                        if success:
+                            # Log detallado de compra
+                            log_msg = f"🟢 COMPRA {symbol}: ${diff_usd:.2f} | Target: ${target_usd:.2f} | Peso: {weight:.2f}"
+                            actions.append(log_msg)
+                            if self.gui:
+                                self.gui.log_trade(log_msg, 'GREEN')
+                        else:
+                            error_msg = f"❌ ERROR COMPRA {symbol}: {msg}"
+                            actions.append(error_msg)
+                            if self.gui:
+                                self.gui.log_trade(error_msg, 'RED')
                     else:
+                        # VENTA
                         quantity = abs(diff_usd) / price
                         success, msg = self.account.sell_market(symbol, quantity)
-                    actions.append(msg)
-                    if self.gui:
-                        self.gui.log_trade(msg, 'GREEN' if diff_usd > 0 else 'RED')
+                        if success:
+                            # Log detallado de venta
+                            log_msg = f"🔴 VENTA {symbol}: {quantity:.6f} (${abs(diff_usd):.2f}) | Peso: {weight:.2f}"
+                            actions.append(log_msg)
+                            if self.gui:
+                                self.gui.log_trade(log_msg, 'RED')
+                        else:
+                            error_msg = f"❌ ERROR VENTA {symbol}: {msg}"
+                            actions.append(error_msg)
+                            if self.gui:
+                                self.gui.log_trade(error_msg, 'RED')
         
         return actions if actions else "No ajustes necesarios"
 

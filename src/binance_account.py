@@ -58,33 +58,50 @@ class BinanceAccount:
     
     def buy_market(self, symbol, usd_amount):
         if not TRADING_ENABLED:
-            msg = f"[SIM] COMPRA {symbol}: ${usd_amount:.2f}"
-            if self.gui: self.gui.log_trade(msg, 'GREEN')
+            msg = f"[SIM] 🟢 COMPRA {symbol}: ${usd_amount:.2f}"
+            if self.gui: 
+                self.gui.log_trade(msg, 'GREEN')
             return True, msg
         try:
             price = self.get_current_price(symbol)
             quantity = self.format_quantity(symbol, usd_amount / price)
             order = self.client.order_market_buy(symbol=symbol, quantity=quantity)
-            msg = f"COMPRA {symbol}: {quantity} por ${usd_amount:.2f}"
-            if self.gui: self.gui.log_trade(msg, 'GREEN')
+            
+            # Log detallado
+            executed_price = float(order['fills'][0]['price']) if order.get('fills') else price
+            executed_total = float(order['cummulativeQuoteQty']) if order.get('cummulativeQuoteQty') else usd_amount
+            
+            msg = f"🟢 COMPRA EJECUTADA {symbol}: {quantity:.6f} @ ${executed_price:.4f} | Total: ${executed_total:.2f}"
+            if self.gui: 
+                self.gui.log_trade(msg, 'GREEN')
             return True, msg
         except BinanceAPIException as e:
-            msg = f"Error COMPRA {symbol}: {e.message}"
-            if self.gui: self.gui.log_trade(msg, 'RED')
+            msg = f"❌ ERROR COMPRA {symbol}: {e.message}"
+            if self.gui: 
+                self.gui.log_trade(msg, 'RED')
             return False, msg
-    
+
     def sell_market(self, symbol, quantity):
         if not TRADING_ENABLED:
-            msg = f"[SIM] VENTA {symbol}: {quantity}"
-            if self.gui: self.gui.log_trade(msg, 'RED')
+            msg = f"[SIM] 🔴 VENTA {symbol}: {quantity:.6f}"
+            if self.gui: 
+                self.gui.log_trade(msg, 'RED')
             return True, msg
         try:
+            price = self.get_current_price(symbol)
             quantity = self.format_quantity(symbol, quantity)
             order = self.client.order_market_sell(symbol=symbol, quantity=quantity)
-            msg = f"VENTA {symbol}: {quantity}"
-            if self.gui: self.gui.log_trade(msg, 'RED')
+            
+            # Log detallado
+            executed_price = float(order['fills'][0]['price']) if order.get('fills') else price
+            executed_total = float(order['cummulativeQuoteQty']) if order.get('cummulativeQuoteQty') else quantity * price
+            
+            msg = f"🔴 VENTA EJECUTADA {symbol}: {quantity:.6f} @ ${executed_price:.4f} | Total: ${executed_total:.2f}"
+            if self.gui: 
+                self.gui.log_trade(msg, 'RED')
             return True, msg
         except BinanceAPIException as e:
-            msg = f"Error VENTA {symbol}: {e.message}"
-            if self.gui: self.gui.log_trade(msg, 'RED')
+            msg = f"❌ ERROR VENTA {symbol}: {e.message}"
+            if self.gui: 
+                self.gui.log_trade(msg, 'RED')
             return False, msg

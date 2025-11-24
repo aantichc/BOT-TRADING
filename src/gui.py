@@ -86,6 +86,7 @@ class ModernTradingGUI:
         self.create_button(control_frame, "▶ START", ACCENT_COLOR, self.safe_start).pack(side=tk.LEFT, padx=5)
         self.create_button(control_frame, "⏹ STOP", DANGER_COLOR, self.safe_stop).pack(side=tk.LEFT, padx=5)
         self.create_button(control_frame, "⚖ REBALANCE", WARNING_COLOR, self.safe_rebalance).pack(side=tk.LEFT, padx=5)
+        self.create_button(control_frame, "🔄 REINICIAR", SECONDARY_COLOR, self.safe_restart_app).pack(side=tk.LEFT, padx=5)  # ← NUEVO BOTÓN
         
         # Selector de timeframe
         tk.Label(control_frame, text="TIMEFRAME:", bg=DARK_BG, fg=TEXT_SECONDARY, 
@@ -192,6 +193,7 @@ class ModernTradingGUI:
 
         self.log_text = tk.Text(log_frame, height=15, bg=CARD_BG, fg=TEXT_COLOR, 
                                font=("Consolas", 9), wrap=tk.WORD)
+        self.setup_log_tags()
         scrollbar_log = tk.Scrollbar(log_frame, command=self.log_text.yview)
         self.log_text.config(yscrollcommand=scrollbar_log.set)
         
@@ -361,6 +363,20 @@ class ModernTradingGUI:
         threading.Thread(target=self.bot.rebalance_manual, daemon=True).start()
 
     def log_trade(self, msg, color="white"):
+        """Agrega mensaje al log de forma thread-safe"""
+        # Auto-detectar tipo de mensaje por contenido si no se especifica color
+        if color == "white":
+            if "COMPRA" in msg.upper() or "🟢" in msg:
+                color = "GREEN"
+            elif "VENTA" in msg.upper() or "🔴" in msg:
+                color = "RED" 
+            elif "ERROR" in msg.upper() or "❌" in msg:
+                color = "RED"
+            elif "CICLO" in msg.upper() or "🔄" in msg:
+                color = "BLUE"
+            elif "ADVERTENCIA" in msg.upper() or "⚠️" in msg:
+                color = "YELLOW"
+        
         self.data_queue.put(("log", msg, color))
 
     def update_token_data(self, symbol_data):
@@ -390,13 +406,36 @@ class ModernTradingGUI:
         finally:
             self.root.after(100, self.process_data_queue)
 
-    def _add_log_message(self, msg, color):
-        """Agrega mensaje al log"""
+    def _add_log_message(self, msg, color="white"):
+        """Agrega mensaje al log con colores específicos"""
         ts = datetime.now().strftime("%H:%M:%S")
-        tag = f"color_{len(self.log_text.tag_names())}"
+        
+        # Mapear colores a tags específicos
+        color_tags = {
+            'GREEN': 'green_log',
+            'RED': 'red_log', 
+            'BLUE': 'blue_log',
+            'YELLOW': 'yellow_log'
+        }
+        
+        tag = color_tags.get(color, 'white_log')
+        
         self.log_text.insert(tk.END, f"[{ts}] {msg}\n", tag)
-        self.log_text.tag_config(tag, foreground=color)
         self.log_text.see(tk.END)
+        
+        # Limitar el tamaño del log para evitar crecimiento excesivo
+        if int(self.log_text.index('end-1c').split('.')[0]) > 500:  # 500 líneas máximo
+            self.log_text.delete(1.0, "50.0")  # Borrar las primeras 50 líneas
+
+    def setup_log_tags(self):
+        """Configura los tags de color para el log"""
+        # Definir colores para diferentes tipos de mensajes
+        self.log_text.tag_config('green_log', foreground="#00ff88")   # Compras/éxito
+        self.log_text.tag_config('red_log', foreground="#ff4444")     # Ventas/errores
+        self.log_text.tag_config('blue_log', foreground="#0088ff")    # Información
+        self.log_text.tag_config('yellow_log', foreground="#ffaa00")  # Advertencias
+        self.log_text.tag_config('white_log', foreground="#ffffff")   # Normal
+
 
     def _update_token_ui(self, symbol_data):
         """Actualiza la UI de tokens con la nueva estructura"""
@@ -698,3 +737,53 @@ class ModernTradingGUI:
         print("Aplicación cerrada correctamente")
         import os
         os._exit(0)
+
+    def safe_restart_app(self):
+        """Reinicia toda la aplicación completamente"""
+        from tkinter import messagebox
+        import sys
+        import os
+        import subprocess
+        
+        result = messagebox.askyesno(
+            "Reiniciar Aplicación", 
+            "¿Reiniciar toda la aplicación?\n\nSe cerrará y volverá a abrir con los últimos cambios de código.\n\n✅ Todos los cambios en el código se aplicarán\n✅ Se reiniciará el bot y la interfaz\n✅ El historial se mantendrá"
+        )
+        
+        if result:
+            self.log_trade("🔄 Reiniciando aplicación completa...", 'BLUE')
+            
+            # Detener el bot actual si existe
+            if hasattr(self, 'bot') and self.bot:
+                self.bot.stop_completely()
+            
+            # Pequeña pausa para asegurar el cierre
+            self.root.after(500, self._perform_restart)
+
+    def _perform_restart(self):
+        """Ejecuta el reinicio completo"""
+        import sys
+        import os
+        import subprocess
+        
+        try:
+            # Guardar historial antes de cerrar
+            self.save_history()
+            
+            # Obtener la ruta del script actual
+            python = sys.executable
+            script = sys.argv[0]
+            
+            self.log_trade("✅ Cerrando aplicación para reinicio...", 'GREEN')
+            
+            # Reiniciar el proceso
+            subprocess.Popen([python, script])
+            
+            # Cerrar la ventana actual
+            self.root.quit()
+            self.root.destroy()
+            
+        except Exception as e:
+            error_msg = f"❌ Error al reiniciar: {str(e)}"
+            self.log_trade(error_msg, 'RED')
+            print(error_msg)
