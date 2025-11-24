@@ -244,10 +244,10 @@ class ModernTradingGUI:
             self.token_frames[symbol] = card
 
     def create_token_card(self, symbol):
-        """Crea una tarjeta individual de token más compacta"""
+        """Crea una tarjeta individual de token con mejor distribución"""
         card = tk.Frame(self.tokens_container, bg=CARD_BG, relief='flat', bd=1,
                     highlightbackground=TEXT_SECONDARY, highlightthickness=1,
-                    width=280, height=180)  # Tamaño fijo para grid
+                    width=280, height=190)
         card.pack_propagate(False)
         
         # Header del token
@@ -263,47 +263,67 @@ class ModernTradingGUI:
         
         # Información de balance
         balance_frame = tk.Frame(card, bg=CARD_BG)
-        balance_frame.pack(fill=tk.X, padx=10, pady=(0, 8))
+        balance_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
         
         balance_label = tk.Label(balance_frame, text="0.000000 → $0.00 (0.0%)", 
                             bg=CARD_BG, fg=TEXT_SECONDARY, font=("Arial", 9))
         balance_label.pack(anchor="w")
         
-        # Semáforo de timeframes
-        signal_frame = tk.Frame(card, bg=CARD_BG)
-        signal_frame.pack(fill=tk.X, padx=10, pady=(0, 8))
+        # CONTENEDOR PARA SEMÁFOROS
+        signals_container = tk.Frame(card, bg=CARD_BG)
+        signals_container.pack(fill=tk.X, padx=10, pady=8)
         
-        # Crear círculos para señales
-        canvas = tk.Canvas(signal_frame, width=150, height=25, bg=CARD_BG, highlightthickness=0)
-        canvas.pack()
+        # Crear timeframes en fila horizontal
+        timeframe_frame = tk.Frame(signals_container, bg=CARD_BG)
+        timeframe_frame.pack()
         
         circles = {}
         timeframes = ["30m", "1h", "2h"]
+        
         for i, tf in enumerate(timeframes):
-            x = 15 + i * 50
-            circle = canvas.create_oval(x-8, 5, x+8, 21, fill="gray", outline=TEXT_SECONDARY)
-            canvas.create_text(x, 28, text=tf, fill=TEXT_SECONDARY, font=("Arial", 7))
-            circles[tf] = circle
+            # Frame individual para cada timeframe
+            tf_frame = tk.Frame(timeframe_frame, bg=CARD_BG)
+            tf_frame.pack(side=tk.LEFT, padx=12)
+            
+            # Canvas para el círculo
+            canvas = tk.Canvas(tf_frame, width=30, height=30, bg=CARD_BG, highlightthickness=0)
+            canvas.pack()
+            
+            # Círculo centrado
+            circle_id = canvas.create_oval(5, 5, 25, 25, fill="gray", outline=TEXT_SECONDARY, width=2)
+            
+            # Guardar tanto el canvas como el circle_id
+            circles[tf] = {
+                'canvas': canvas,
+                'circle_id': circle_id
+            }
+            
+            # Texto del timeframe DEBAJO del círculo
+            tk.Label(tf_frame, text=tf, bg=CARD_BG, fg=TEXT_SECONDARY, 
+                    font=("Arial", 8, "bold")).pack()
         
-        # Peso y señal
-        weight_frame = tk.Frame(card, bg=CARD_BG)
-        weight_frame.pack(fill=tk.X, padx=10, pady=(0, 8))
+        # Peso y señal general
+        signal_frame = tk.Frame(card, bg=CARD_BG)
+        signal_frame.pack(fill=tk.X, padx=10, pady=(8, 8))
         
-        weight_label = tk.Label(weight_frame, text="PESO: 0.00", bg=CARD_BG, fg=WARNING_COLOR,
+        # Contenedor para centrar
+        center_frame = tk.Frame(signal_frame, bg=CARD_BG)
+        center_frame.pack(expand=True)
+        
+        weight_label = tk.Label(center_frame, text="PESO: 0.00", bg=CARD_BG, fg=WARNING_COLOR,
                             font=("Arial", 11, "bold"))
-        weight_label.pack(side=tk.LEFT)
+        weight_label.pack(side=tk.LEFT, padx=(0, 10))
         
-        signal_label = tk.Label(weight_frame, text="SEÑAL: N/A", bg=CARD_BG, fg=TEXT_SECONDARY,
-                            font=("Arial", 9))
-        signal_label.pack(side=tk.RIGHT)
+        signal_label = tk.Label(center_frame, text="SEÑAL: N/A", bg=CARD_BG, fg=TEXT_SECONDARY,
+                            font=("Arial", 10, "bold"))
+        signal_label.pack(side=tk.LEFT)
         
         # Guardar referencias
         card.data = {
             "symbol": symbol,
             "price_label": price_label,
             "balance_label": balance_label,
-            "canvas": canvas,
-            "circles": circles,
+            "circles": circles,  # Ahora es un diccionario con canvas y circle_id
             "weight_label": weight_label,
             "signal_label": signal_label
         }
@@ -379,7 +399,7 @@ class ModernTradingGUI:
         self.log_text.see(tk.END)
 
     def _update_token_ui(self, symbol_data):
-        """Actualiza la UI de tokens"""
+        """Actualiza la UI de tokens con la nueva estructura"""
         for symbol, data in symbol_data.items():
             if symbol in self.token_frames:
                 frame_data = self.token_frames[symbol].data
@@ -392,15 +412,17 @@ class ModernTradingGUI:
                         text=f"{data['balance']:.6f} → ${data['usd']:,.2f} ({data['pct']:.1f}%)"
                     )
                     
-                    # Actualizar semáforo
-                    for tf, circle_id in frame_data["circles"].items():
-                        color = "gray"
+                    # Actualizar círculos de timeframes
+                    for tf, circle_data in frame_data["circles"].items():
+                        color = "gray"  # Por defecto
                         if tf in data['signals']:
                             signal = data['signals'][tf]
                             color = "#00ff00" if signal == "GREEN" else "#ffff00" if signal == "YELLOW" else "#ff4444"
-                        frame_data["canvas"].itemconfig(circle_id, fill=color)
+                        
+                        # Actualizar el color del círculo usando el canvas y circle_id
+                        circle_data['canvas'].itemconfig(circle_data['circle_id'], fill=color)
                     
-                    # Actualizar peso y señal
+                    # Actualizar peso y señal general
                     weight = data['weight']
                     if weight >= 0.8:
                         weight_color = "#00ff00"
@@ -419,7 +441,10 @@ class ModernTradingGUI:
                         text=f"PESO: {weight:.2f}", 
                         fg=weight_color
                     )
-                    frame_data["signal_label"].config(text=f"SEÑAL: {signal_text}")
+                    frame_data["signal_label"].config(
+                        text=f"SEÑAL: {signal_text}",
+                        font=("Arial", 9)
+                    )
                     
                 except Exception as e:
                     print(f"Error updating {symbol} UI: {e}")
