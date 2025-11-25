@@ -439,24 +439,106 @@ class ModernTradingGUI:
         return card
 
     def load_history(self):
-        """Carga el historial desde archivo"""
+        """Carga el historial desde archivo - optimizado para muchos datos"""
         history_file = "capital_history.json"
         if os.path.exists(history_file):
             try:
                 with open(history_file, "r") as f:
                     data = json.load(f)
-                    return [(datetime.fromisoformat(d[0]), d[1]) for d in data]
+                
+                loaded_history = [(datetime.fromisoformat(d[0]), d[1]) for d in data]
+                print(f"📈 Historial cargado: {len(loaded_history)} puntos")
+                
+                # ✅ SI HAY MÁS DE 5000 PUNTOS, CONSERVAR SOLO LOS MÁS RECIENTES
+                if len(loaded_history) > 5000:
+                    loaded_history = loaded_history[-5000:]
+                    print(f"📊 Historial recortado a {len(loaded_history)} puntos más recientes")
+                
+                return loaded_history
+                
             except Exception as e:
-                print(f"Error loading history: {e}")
-        return []
+                print(f"❌ Error cargando historial: {e}")
+    
+        # ✅ Si no hay historial, crear uno inicial
+        if self.bot and hasattr(self.bot, 'account'):
+            try:
+                initial_balance = self.bot.account.get_balance_usdc()
+                initial_history = [(datetime.now(), initial_balance)]
+                print(f"💰 Historial inicial creado: ${initial_balance:,.2f}")
+                return initial_history
+            except:
+                pass
+        
+    def compress_old_data(self):
+        """Comprime datos antiguos para ahorrar espacio manteniendo tendencias"""
+        if len(self.history) < 1000:  # Solo comprimir si hay muchos datos
+            print("📊 No hay suficientes datos para comprimir")
+            return
+        
+        print(f"🔍 Comprimiendo {len(self.history)} puntos de historial...")
+        
+        # Separar datos recientes (últimas 24 horas) y antiguos
+        cutoff_time = datetime.now() - timedelta(hours=24)
+        recent_data = [point for point in self.history if point[0] >= cutoff_time]
+        old_data = [point for point in self.history if point[0] < cutoff_time]
+        
+        if len(old_data) <= 500:
+            print("📊 No hay suficientes datos antiguos para comprimir")
+            return
+        
+        print(f"📊 Comprimiendo {len(old_data)} puntos antiguos...")
+        
+        # Comprimir datos antiguos: conservar 1 punto por hora
+        compressed_old = []
+        current_hour = None
+        hour_points = []
+        
+        # Ordenar por tiempo (por si acaso)
+        old_data.sort(key=lambda x: x[0])
+        
+        for time_point, value in old_data:
+            hour_key = time_point.replace(minute=0, second=0, microsecond=0)
+            if hour_key != current_hour:
+                if hour_points:  # Guardar el punto medio de la hora anterior
+                    # Usar el punto del medio de la hora para mejor representación
+                    mid_index = len(hour_points) // 2
+                    compressed_old.append(hour_points[mid_index])
+                
+                current_hour = hour_key
+                hour_points = []
+            
+            hour_points.append((time_point, value))
+        
+        # Agregar la última hora
+        if hour_points:
+            mid_index = len(hour_points) // 2
+            compressed_old.append(hour_points[mid_index])
+        
+        # Combinar datos comprimidos con recientes
+        self.history = compressed_old + recent_data
+        self.history.sort(key=lambda x: x[0])  # Re-ordenar por tiempo
+        
+        print(f"✅ Compresión completada: {len(compressed_old)} puntos antiguos + {len(recent_data)} recientes = {len(self.history)} total")
+        
+        # Guardar después de comprimir
+        self.save_history()
 
     def save_history(self):
-        """Guarda el historial"""
+        """Guarda el historial inmediatamente"""
         try:
-            with open("capital_history.json", "w") as f:
-                json.dump([(dt.isoformat(), val) for dt, val in self.history], f)
+            history_file = "capital_history.json"
+            data_to_save = [(dt.isoformat(), val) for dt, val in self.history]
+            
+            # ✅ GUARDADO RÁPIDO sin indentación para mejor performance
+            with open(history_file, "w") as f:
+                json.dump(data_to_save, f)
+            
+            # ✅ SOLO MOSTRAR DEBUG OCASIONALMENTE para no saturar la consola
+            if len(self.history) % 10 == 0:  # Cada 10 updates
+                print(f"💾 Historial guardado: {len(self.history)} puntos")
+                
         except Exception as e:
-            print(f"Error saving history: {e}")
+            print(f"❌ Error guardando historial: {e}")
 
     # Métodos de actualización y comunicación (similares a los anteriores)
     def safe_start(self):
@@ -538,6 +620,7 @@ class ModernTradingGUI:
                 elif item[0] == "portfolio":
                     self._update_portfolio_ui(item[1])
                 elif item[0] == "chart_update":
+                    # ✅ ACTUALIZAR EL GRÁFICO CON EL NUEVO BALANCE
                     self._update_main_chart(item[1])
         except queue.Empty:
             pass
@@ -721,6 +804,10 @@ class ModernTradingGUI:
             # SOLO OBTENER DATOS EN EL HILO SECUNDARIO
             total_balance = self.bot.account.get_balance_usdc()
             
+            # ✅ ACTUALIZAR HISTORIAL - ESTO ES LO QUE FALTABA
+            now = datetime.now()
+            self._update_history(now, total_balance)
+            
             symbol_data = {}
             for symbol in self.token_frames.keys():
                 try:
@@ -828,31 +915,61 @@ class ModernTradingGUI:
         return f"{sign}{change:.2f}%"
 
     def _update_history(self, now, total_balance):
-        """Actualiza el historial"""
+        """Actualiza el historial - GUARDA SIEMPRE y límite mayor"""
+        # Evitar puntos duplicados en el mismo minuto
+        if self.history:
+            last_time = self.history[-1][0]
+            time_diff = (now - last_time).total_seconds()
+            
+            # Solo agregar si han pasado al menos 30 segundos
+            if time_diff < 30:
+                return
+        
         self.history.append((now, total_balance))
-        if len(self.history) % 12 == 0:  # Guardar cada minuto aprox
-            self.save_history()
+        
+        # ✅ COMPRIMIR SI TENEMOS MÁS DE 2000 PUNTOS
+        if len(self.history) > 2000:
+            self.compress_old_data()
+        
+        # ✅ LIMITAR A 5000 PUNTOS (por si la compresión no fue suficiente)
+        if len(self.history) > 5000:
+            self.history = self.history[-5000:]
+        
+        # ✅ GUARDAR SIEMPRE CADA ACTUALIZACIÓN
+        self.save_history()
 
     def _update_main_chart(self, total_balance):
-        """Actualiza el gráfico principal"""
+        """Actualiza el gráfico principal optimizado para muchos datos"""
         try:
             tf = self.tf_var.get()
             cutoff = datetime.now() - self.get_timedelta_from_tf(tf)
             
+            # Filtrar datos según el timeframe seleccionado
             filtered = [(t, v) for t, v in self.history if t >= cutoff]
+            
+            # Si hay pocos datos filtrados, mostrar más historial
+            if len(filtered) < 10 and self.history:
+                # Mostrar últimos 100 puntos como mínimo
+                filtered = self.history[-100:]
+            
             if not filtered:
-                filtered = self.history[-100:] if self.history else [(datetime.now(), total_balance)]
+                filtered = [(datetime.now(), total_balance)]
 
             times, values = zip(*filtered)
             self.ax.clear()
             
-            if len(times) > 3:
-                x_num = np.array([t.timestamp() for t in times])
-                x_smooth = np.linspace(x_num.min(), x_num.max(), 300)
-                spl = make_interp_spline(x_num, values, k=3)
-                y_smooth = spl(x_smooth)
-                smooth_times = [datetime.fromtimestamp(ts) for ts in x_smooth]
-                self.ax.plot(smooth_times, y_smooth, color=ACCENT_COLOR, linewidth=3)
+            # ✅ OPTIMIZAR: Solo suavizar si hay suficientes puntos
+            if len(times) > 10:
+                try:
+                    x_num = np.array([t.timestamp() for t in times])
+                    x_smooth = np.linspace(x_num.min(), x_num.max(), min(300, len(times)))
+                    spl = make_interp_spline(x_num, values, k=3)
+                    y_smooth = spl(x_smooth)
+                    smooth_times = [datetime.fromtimestamp(ts) for ts in x_smooth]
+                    self.ax.plot(smooth_times, y_smooth, color=ACCENT_COLOR, linewidth=3)
+                except:
+                    # Fallback a línea normal si falla el suavizado
+                    self.ax.plot(times, values, color=ACCENT_COLOR, linewidth=3)
             else:
                 self.ax.plot(times, values, color=ACCENT_COLOR, linewidth=3)
 
