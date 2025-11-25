@@ -62,7 +62,10 @@ class ModernTradingGUI:
         # ✅ NO USAR mainloop() AQUÍ - se controlará desde main.py con update()
         print("✅ GUI inicializada (esperando configuración desde main.py)")
         
-        # ✅ NO HAY self.root.mainloop() AL FINAL
+        # INICIALIZAR LIMPIEZA PERIÓDICA
+        self.root.after(60000, self.setup_memory_cleanup)  # Empezar después de 1 minuto      
+
+
 
     def enable_bot_controls(self):
         """✅ HABILITAR controles del bot después de conexión exitosa"""
@@ -608,10 +611,15 @@ class ModernTradingGUI:
         self.data_queue.put(("portfolio", portfolio_data))
 
     def process_data_queue(self):
-        """Procesa la cola de datos de forma thread-safe EN EL HILO PRINCIPAL"""
+        """Procesar cola con límite y limpieza"""
         try:
-            while True:
+            processed_count = 0
+            MAX_PROCESS_PER_CYCLE = 20  # No procesar más de 20 items por ciclo
+            
+            while processed_count < MAX_PROCESS_PER_CYCLE:
                 item = self.data_queue.get_nowait()
+                processed_count += 1
+                
                 if item[0] == "log":
                     self._add_log_message(item[1], item[2])
                 elif item[0] == "token_data":
@@ -621,24 +629,35 @@ class ModernTradingGUI:
                 elif item[0] == "portfolio":
                     self._update_portfolio_ui(item[1])
                 elif item[0] == "chart_update":
-                    # ✅ ACTUALIZAR EL GRÁFICO CON EL NUEVO BALANCE
                     self._update_main_chart(item[1])
+                    
         except queue.Empty:
             pass
         finally:
-            # ✅ PROGRAMAR SIGUIENTE ACTUALIZACIÓN SI EL BOT ESTÁ EJECUTÁNDOSE
+            # LIMPIAR COLA SI SE ESTÁ LLENANDO DEMASIADO
+            if self.data_queue.qsize() > 100:
+                print("⚠️ Limpiando queue sobrecargada...")
+                try:
+                    while self.data_queue.qsize() > 50:  # Dejar solo los 50 más recientes
+                        self.data_queue.get_nowait()
+                except queue.Empty:
+                    pass
+            
+            # Programar siguiente actualización
             if (hasattr(self, 'bot') and self.bot is not None and 
                 hasattr(self.bot, 'running') and self.bot.running and
                 not self.updating):
-                self.root.after(5000, self.safe_update_ui)  # 5 segundos
+                self.root.after(20000, self.safe_update_ui)  # Aumentar a 20 segundos
             else:
-                self.root.after(1000, self.process_data_queue)  # Revisar cada segundo
+                self.root.after(2000, self.process_data_queue)  # 2 segundos
+
+    def setup_memory_cleanup(self):
+        """Limpieza periódica de memoria"""
+        self.root.after(300000, self.cleanup_memory)  # Cada 5 minutos
 
     def _add_log_message(self, msg, color="white"):
-        """Agrega mensaje al log con colores específicos"""
         ts = datetime.now().strftime("%H:%M:%S")
         
-        # Mapear colores a tags específicos
         color_tags = {
             'GREEN': 'green_log',
             'RED': 'red_log', 
@@ -651,9 +670,14 @@ class ModernTradingGUI:
         self.log_text.insert(tk.END, f"[{ts}] {msg}\n", tag)
         self.log_text.see(tk.END)
         
-        # Limitar el tamaño del log para evitar crecimiento excesivo
-        if int(self.log_text.index('end-1c').split('.')[0]) > 500:  # 500 líneas máximo
-            self.log_text.delete(1.0, "50.0")  # Borrar las primeras 50 líneas
+        # ¡LIMPIAR MÁS AGRESIVAMENTE!
+        current_lines = int(self.log_text.index('end-1c').split('.')[0])
+        if current_lines > 300:  # Reducir de 500 a 300
+            self.log_text.delete(1.0, "100.0")  # Borrar 100 líneas cada vez
+        
+        # Limitar tamaño máximo absoluto
+        if current_lines > 1000:
+            self.log_text.delete(1.0, "500.0")  # Borrar 500 líneas drásticamente
 
     def setup_log_tags(self):
         """Configura los tags de color para el log"""
@@ -800,7 +824,7 @@ class ModernTradingGUI:
         
         # ✅ SOLO PROGRAMAR SIGUIENTE SI NO ESTAMOS CERRANDO
         if not self.closing and self.bot is not None and self.bot.running:
-            self.root.after(5000, self.safe_update_ui)  # 5 segundos
+            self.root.after(20000, self.safe_update_ui)  # 20 segundos
 
     def _background_update(self):
         """Actualización en background - solo obtener datos, UI en hilo principal"""
@@ -925,28 +949,32 @@ class ModernTradingGUI:
         return f"{sign}{change:.2f}%"
 
     def _update_history(self, now, total_balance):
-        """Actualiza el historial - GUARDA SIEMPRE y límite mayor"""
-        # Evitar puntos duplicados en el mismo minuto
-        if self.history:
-            last_time = self.history[-1][0]
-            time_diff = (now - last_time).total_seconds()
-            
-            # Solo agregar si han pasado al menos 30 segundos
-            if time_diff < 30:
-                return
+        """Historial optimizado - máximo 1000 puntos"""
+        
+        # Solo agregar si hay cambio significativo (> $0.10)
+        if self.history and abs(total_balance - self.history[-1][1]) < 0.10:
+            return  # No agregar puntos duplicados
         
         self.history.append((now, total_balance))
         
-        # ✅ COMPRIMIR SI TENEMOS MÁS DE 2000 PUNTOS
-        if len(self.history) > 2000:
-            self.compress_old_data()
+        # LIMITAR A 1000 PUNTOS SIEMPRE
+        if len(self.history) > 1000:
+            # Mantener distribución: 800 antiguos + 200 recientes
+            keep_old = 800
+            keep_recent = 200
+            
+            if len(self.history) > keep_old + keep_recent:
+                # Combinar puntos antiguos comprimidos + recientes
+                old_data = self.history[:keep_old]
+                recent_data = self.history[-keep_recent:]
+                
+                # Comprimir datos antiguos: 1 punto cada 10
+                compressed_old = old_data[::10]
+                self.history = compressed_old + recent_data
         
-        # ✅ LIMITAR A 5000 PUNTOS (por si la compresión no fue suficiente)
-        if len(self.history) > 5000:
-            self.history = self.history[-5000:]
-        
-        # ✅ GUARDAR SIEMPRE CADA ACTUALIZACIÓN
-        self.save_history()
+        # Guardar solo cada 10 actualizaciones para reducir I/O
+        if len(self.history) % 10 == 0:
+            self.save_history()
 
     def _update_main_chart(self, total_balance):
         """Actualiza el gráfico principal optimizado para muchos datos"""
