@@ -53,25 +53,41 @@ class TradingBot:
             self.gui.log_trade("Bot stopped", 'RED')
    
     def stop_completely(self):
-        """Parada completa para reinicio de aplicación"""
+        """Parada completa para reinicio de aplicación - EVITA DOBLE LLAMADO"""
+        if hasattr(self, '_already_stopping') and self._already_stopping:
+            print("⏭️  Stop completo ya en progreso, omitiendo...")
+            return
+            
+        self._already_stopping = True
         print("🛑 Deteniendo bot completamente para reinicio...")
         self.force_stop = True
         self.running = False
         
         try:
-            self.client.close_connection()
-            print("✅ Conexión de Binance cerrada")
+            # ✅ CERRAR CONEXIÓN DE BINANCE
+            if hasattr(self.client, 'close_connection'):
+                self.client.close_connection()
+                print("✅ Conexión de Binance cerrada")
         except Exception as e:
             print(f"⚠️ Error cerrando conexión: {e}")
         
-        if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=2.0)
+        # ✅ ESPERAR AL HILO CON TIMEOUT
+        if hasattr(self, 'thread') and self.thread and self.thread.is_alive():
+            print("⏳ Esperando que el hilo del bot termine...")
+            self.thread.join(timeout=3.0)
             if self.thread.is_alive():
                 print("⚠️ Hilo del bot aún activo, forzando cierre...")
             else:
                 print("✅ Hilo del bot terminado")
         
-        print("✅ Bot listo para reinicio")
+        # ✅ LIMPIAR REFERENCIAS
+        self.gui = None
+        if hasattr(self, 'account'):
+            self.account.gui = None
+        if hasattr(self, 'manager'):
+            self.manager.gui = None
+        
+        print("✅ Bot completamente detenido - listo para reinicio")
     
     def rebalance_manual(self):
         try:
@@ -87,6 +103,11 @@ class TradingBot:
     def loop(self):
         while self.running and not self.force_stop:
             try:
+                # ✅ VERIFICAR force_stop MÁS FRECUENTEMENTE
+                if self.force_stop:
+                    print("🛑 Fuerza parada detectada en loop, saliendo...")
+                    break
+                    
                 # ✅ ESPERAR HASTA QUE LA GUI ESTÉ CONECTADA
                 if (hasattr(self, 'manager') and hasattr(self.manager, 'gui') 
                     and self.manager.gui is not None and hasattr(self, 'gui') 
@@ -95,16 +116,22 @@ class TradingBot:
                     self.manager.rebalance()
                 else:
                     print("⏳ Esperando conexión GUI completa...")
-                    time.sleep(5)  # Esperar 5 segundos antes de reintentar
+                    # ✅ VERIFICAR force_stop DURANTE LA ESPERA
+                    for i in range(5):
+                        if self.force_stop:
+                            break
+                        time.sleep(1)
                     continue
                     
-                # Espera normal de 10 segundos
+                # ✅ ESPERA NORMAL CON VERIFICACIÓN FRECUENTE
                 for i in range(10):
                     if not self.running or self.force_stop:
                         break
                     time.sleep(1)
                     
             except Exception as e:
+                if self.force_stop:
+                    break
                 logging.error(f"Error in bot loop: {e}")
                 if not self.force_stop:
-                    time.sleep(10)  # Esperar más en caso de error
+                    time.sleep(10)

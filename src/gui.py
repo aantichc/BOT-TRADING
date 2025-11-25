@@ -12,6 +12,7 @@ import threading
 import queue
 import numpy as np
 from scipy.interpolate import make_interp_spline
+import subprocess  
 
 # Configuración de colores
 DARK_BG = "#0f0f0f"
@@ -785,12 +786,21 @@ class ModernTradingGUI:
         
         self.portfolio_canvas.draw()
 
+    
+
     def safe_update_ui(self):
-        """Inicia actualización en hilo separado de forma segura"""
+        """Inicia actualización en hilo separado de forma segura - EVITA DUPLICADOS"""
+        if self.closing:
+            return
+            
         if (not self.updating and self.bot is not None and 
             hasattr(self.bot, 'running') and self.bot.running):
             self.updating = True
             threading.Thread(target=self._background_update, daemon=True).start()
+        
+        # ✅ SOLO PROGRAMAR SIGUIENTE SI NO ESTAMOS CERRANDO
+        if not self.closing and self.bot is not None and self.bot.running:
+            self.root.after(5000, self.safe_update_ui)  # 5 segundos
 
     def _background_update(self):
         """Actualización en background - solo obtener datos, UI en hilo principal"""
@@ -998,50 +1008,85 @@ class ModernTradingGUI:
         else: return timedelta(hours=1)
 
     def on_close(self):
-        """Maneja el cierre de la aplicación"""
+        """Maneja el cierre de la aplicación - SALIDA INMEDIATA"""
         if self.closing:
             return
         
         self.closing = True
-        print("Cerrando aplicación...")
+        print("🔴 CERRANDO APLICACIÓN...")
         
-        if self.update_job:
-            self.root.after_cancel(self.update_job)
+        # ✅ DETENER TODO INMEDIATAMENTE
+        self.updating = False
         
-        if hasattr(self.bot, 'stop_completely'):
-            self.bot.stop_completely()
+        if hasattr(self, 'bot') and self.bot is not None:
+            self.bot.force_stop = True
+            self.bot.running = False
         
-        self.save_history()
-        self.root.destroy()
+        # ✅ GUARDAR RÁPIDAMENTE
+        try:
+            self.save_history()
+        except:
+            pass
         
-        print("Aplicación cerrada correctamente")
+        # ✅ CERRAR VENTANA
+        try:
+            self.root.quit()
+        except:
+            pass
+        
+        # ✅ SALIR
         import os
         os._exit(0)
 
     def _perform_restart(self):
-        """Ejecuta el reinicio completo"""
+        """Ejecuta el reinicio completo - CON DELAY DE ESTABILIZACIÓN"""
         import sys
         import os
-        import subprocess
+        import time
         
         try:
-            # Guardar historial antes de cerrar
-            self.save_history()
+            print("🔴 INICIANDO REINICIO COMPLETO...")
             
-            # Obtener la ruta del script actual
+            # ✅ MARCAR COMO CERRANDO
+            self.closing = True
+            self.updating = False
+            
+            # ✅ DETENER BOT
+            if hasattr(self, 'bot') and self.bot is not None:
+                print("🛑 Deteniendo bot...")
+                self.bot.force_stop = True
+                self.bot.running = False
+            
+            # ✅ PEQUEÑO DELAY PARA ESTABILIZAR
+            time.sleep(0.5)
+            
+            # ✅ GUARDAR HISTORIAL
+            try:
+                self.save_history()
+                print("💾 Historial guardado")
+            except:
+                pass
+            
+            # ✅ CERRAR VENTANA
+            try:
+                self.root.quit()
+                print("✅ Ventana cerrada")
+            except:
+                pass
+            
+            # ✅ PEQUEÑO DELAY ANTES DEL REINICIO
+            time.sleep(0.5)
+            
+            # ✅ REINICIAR
             python = sys.executable
             script = sys.argv[0]
+            print(f"🔄 Lanzando nuevo proceso: {python} {script}")
             
-            self.log_trade("✅ Cerrando aplicación para reinicio...", 'GREEN')
-            
-            # Reiniciar el proceso
             subprocess.Popen([python, script])
             
-            # Cerrar la ventana actual
-            self.root.quit()
-            self.root.destroy()
+            # ✅ SALIR
+            os._exit(0)
             
         except Exception as e:
-            error_msg = f"❌ Error al reiniciar: {str(e)}"
-            self.log_trade(error_msg, 'RED')
-            print(error_msg)
+            print(f"❌ Error crítico en reinicio: {e}")
+            os._exit(1)
