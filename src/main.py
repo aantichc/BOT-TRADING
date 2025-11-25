@@ -31,7 +31,7 @@ def main():
         gui.enable_bot_controls()
         
         # ✅ LOG INICIAL
-        gui.log_trade("🚀 SISTEMA INICIADO CORRECTAMENTE", 'GREEN')
+        gui.log_trade("🚀 System Working", 'GREEN')
         
         print("🎯 Aplicación ejecutándose...")
         
