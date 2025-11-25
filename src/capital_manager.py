@@ -64,7 +64,7 @@ class CapitalManager:
                     signal_change_msg = self._get_signal_change_message(symbol, signals, old_weight, weight)
                     actions.append(signal_change_msg)
                     if self.gui:
-                        self.gui.log_trade(signal_change_msg, 'BLUE')
+                        self.gui.log_trade(signal_change_msg)
                 
                 target_usd = total_usd * self.base_allocation * min(1.0, weight)
                 current_balance = self.account.get_symbol_balance(symbol)
@@ -77,7 +77,7 @@ class CapitalManager:
                         # COMPRA
                         success, msg = self.account.buy_market(symbol, diff_usd)
                         if success:
-                            log_msg = f"🟢 COMPRA {symbol}: ${diff_usd:.2f} | Target: ${target_usd:.2f} | Peso: {weight:.2f}"
+                            #log_msg = f"🟢 COMPRA {symbol}: ${diff_usd:.2f} | Target: ${target_usd:.2f} | Peso: {weight:.2f}"
                             actions.append(log_msg)
                             if self.gui:
                                 self.gui.log_trade(log_msg, 'GREEN')
@@ -91,7 +91,7 @@ class CapitalManager:
                         quantity = abs(diff_usd) / price
                         success, msg = self.account.sell_market(symbol, quantity)
                         if success:
-                            log_msg = f"🔴 VENTA {symbol}: {quantity:.6f} (${abs(diff_usd):.2f}) | Peso: {weight:.2f}"
+                            #log_msg = f"🔴 VENTA {symbol}: {quantity:.6f} (${abs(diff_usd):.2f}) | Peso: {weight:.2f}"
                             actions.append(log_msg)
                             if self.gui:
                                 self.gui.log_trade(log_msg, 'RED')
@@ -108,7 +108,7 @@ class CapitalManager:
             initial_summary = self._get_initial_summary()
             actions.append(initial_summary)
             if self.gui:
-                self.gui.log_trade(initial_summary, 'BLUE')
+                self.gui.log_trade(initial_summary)
         
         return actions if actions else "No ajustes necesarios"
     
@@ -131,7 +131,7 @@ class CapitalManager:
             signals_str = " ".join(signal_emojis)
             signal_text = self._weight_to_signal(weight)
             
-            summary_lines.append(f"   {symbol}: {signal_text} | Peso: {weight:.2f} | {signals_str}")
+            summary_lines.append(f" {symbol}: {signal_text} | Peso: {weight:.2f}")
         
         return "\n".join(summary_lines)
 
@@ -151,15 +151,15 @@ class CapitalManager:
         
         # Mensaje más claro
         if new_weight > old_weight:
-            direction = "📈 MEJORÓ"
+            direction = "📈"
             color_indicator = "🟢"
         elif new_weight < old_weight:
-            direction = "📉 EMPEORÓ" 
+            direction = "📉" 
             color_indicator = "🔴"
         else:
             return ""  # No loggear si no hay cambio real
         
-        return f"{color_indicator} {symbol}: {direction} | {old_signal} → {new_signal} | {timeframes_str}"
+        return f"{symbol}: {direction} {old_weight} → {new_weight}"
 
     def _weight_to_signal(self, weight):
         """Convierte peso numérico a texto de señal"""
