@@ -39,9 +39,9 @@ class TradingBot:
             self.running = True
             self.thread = threading.Thread(target=self.loop, daemon=True)
             self.thread.start()
-            print("🤖 Bot iniciado")
+            print("🤖 Bot Started")
             if self.gui: 
-                self.gui.log_trade("🤖 Bot iniciado", 'GREEN')
+                self.gui.log_trade("🤖 Bot Started", 'GREEN')
             else:
                 print("⚠️ Bot iniciado sin GUI conectada")
     

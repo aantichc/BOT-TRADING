@@ -114,7 +114,7 @@ class CapitalManager:
     
     def _get_initial_summary(self):
         """Genera un resumen limpio de las señales iniciales"""
-        summary_lines = ["📊 SEÑALES INICIALES:"]
+        summary_lines = ["📊 Staring Signals:"]
         
         for symbol in self.SYMBOLS:
             signals = self.get_signals(symbol)
@@ -131,7 +131,7 @@ class CapitalManager:
             signals_str = " ".join(signal_emojis)
             signal_text = self._weight_to_signal(weight)
             
-            summary_lines.append(f" {symbol}: {signal_text} | Peso: {weight:.2f}")
+            summary_lines.append(f" {symbol}: {signal_text} | Weight: {weight:.2f}")
         
         return "\n".join(summary_lines)
 
