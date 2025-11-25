@@ -1,5 +1,6 @@
 # main.py - VERSIÓN CORREGIDA
 import logging
+import time
 
 logging.basicConfig(level=logging.INFO)
 
@@ -7,34 +8,55 @@ def main():
     print("🚀 Iniciando aplicación...")
     
     try:
-        # ✅ IMPORTAR DENTRO de la función para evitar circular imports
         from trading_bot import TradingBot
         from gui import ModernTradingGUI
         
         print("1. Creando bot...")
         bot = TradingBot(None)
-        print(f"✅ Bot creado - GUI temporal: {bot.gui is not None}")
+        print(f"✅ Bot creado")
         
-        print("2. Creando GUI con bot...")
-        gui = ModernTradingGUI(bot)  # ← Pasar el bot directamente
-        print(f"✅ GUI creada - Bot: {gui.bot is not None}")
+        print("2. Creando GUI...")
+        gui = ModernTradingGUI(bot)
+        print(f"✅ GUI creada")
         
-        print("3. Conectando bot con GUI...")
-        bot.gui = gui  # Ahora el bot tiene la GUI real
-        print(f"✅ Conexión completa - Bot GUI: {bot.gui is not None}")
+        print("3. Conectando GUI...")
+        bot.connect_gui(gui)
+        print(f"✅ GUI conectada")
         
-        # ✅ INICIAR BOT AUTOMÁTICAMENTE
-        if bot.gui and gui.bot:
-            print("4. Iniciando bot automáticamente...")
-            bot.start()
-            print("✅ Aplicación iniciada correctamente")
-        else:
-            print("❌ Error de conexión")
+        print("4. Iniciando bot...")
+        bot.start()
+        print("✅ Bot iniciado")
+        
+        print("5. Configurando controles...")
+        gui.enable_bot_controls()
+        
+        # ✅ LOG INICIAL
+        gui.log_trade("🚀 SISTEMA INICIADO CORRECTAMENTE", 'GREEN')
+        gui.log_trade("🤖 Bot ejecutándose automáticamente", 'BLUE')
+        
+        print("🎯 Aplicación ejecutándose...")
+        
+        # ✅ LOOP PRINCIPAL
+        try:
+            while True:
+                try:
+                    gui.root.update()
+                    gui.process_data_queue()  # Procesar cola en hilo principal
+                    time.sleep(0.05)
+                except Exception as e:
+                    if "main thread is not in main loop" not in str(e):
+                        print(f"⚠️ Error en update: {e}")
+                    time.sleep(0.1)
+        except KeyboardInterrupt:
+            print("\n🛑 Cerrando aplicación...")
             
     except Exception as e:
-        print(f"❌ Error al iniciar aplicación: {e}")
+        print(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
+    finally:
+        if 'bot' in locals():
+            bot.stop_completely()
 
 if __name__ == "__main__":
     main()

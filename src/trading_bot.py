@@ -1,4 +1,4 @@
-# Archivo: trading_bot.py - VERSIÓN CON CIERRE COMPLETO
+# Archivo: trading_bot.py - VERSIÓN SIN INICIO AUTOMÁTICO
 from binance.client import Client
 from config import API_KEY, API_SECRET, UPDATE_INTERVAL
 from indicators import Indicators
@@ -19,21 +19,31 @@ class TradingBot:
 
         self.client = Client(API_KEY, API_SECRET)
         self.indicators = Indicators(self.client)
-        self.account = BinanceAccount(self.gui)
-        self.manager = CapitalManager(self.account, self.indicators, self.gui)
+        self.account = BinanceAccount(None)  # ✅ Inicialmente sin GUI
+        self.manager = CapitalManager(self.account, self.indicators, None)  # ✅ Inicialmente sin GUI
         self.running = False
         self.thread = None
-        self.force_stop = False  # ✅ NUEVO: Bandera de parada forzosa
+        self.force_stop = False
+    
+    def connect_gui(self, gui):
+        """✅ CONECTA GUI a todos los componentes"""
+        print(f"🔗 Conectando GUI a todos los componentes...")
+        self.gui = gui
+        self.account.gui = gui  # Actualizar cuenta
+        self.manager.gui = gui  # Actualizar manager
+        print(f"✅ GUI conectada - Account: {self.account.gui is not None}, Manager: {self.manager.gui is not None}")
+    
     def start(self):
+        """✅ INICIAR BOT MANUALMENTE"""
         if not self.running:
             self.running = True
             self.thread = threading.Thread(target=self.loop, daemon=True)
             self.thread.start()
-            print("🤖 Bot iniciado")  # ← DEBUG
+            print("🤖 Bot iniciado")
             if self.gui: 
                 self.gui.log_trade("🤖 Bot iniciado", 'GREEN')
             else:
-                print("❌ GUI no conectada al bot")  # ← DEBUG
+                print("⚠️ Bot iniciado sin GUI conectada")
     
     def stop(self):
         """Parada normal"""
@@ -48,17 +58,14 @@ class TradingBot:
         self.force_stop = True
         self.running = False
         
-        # Detener inmediatamente cualquier operación en curso
         try:
-            # Cerrar conexiones de Binance
             self.client.close_connection()
             print("✅ Conexión de Binance cerrada")
         except Exception as e:
             print(f"⚠️ Error cerrando conexión: {e}")
         
-        # Esperar a que el hilo termine (pero no demasiado)
         if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=2.0)  # Timeout más corto para reinicio rápido
+            self.thread.join(timeout=2.0)
             if self.thread.is_alive():
                 print("⚠️ Hilo del bot aún activo, forzando cierre...")
             else:
@@ -78,20 +85,26 @@ class TradingBot:
                 self.gui.log_trade(f"Error in rebalance: {e}", 'RED')
     
     def loop(self):
-        while self.running and not self.force_stop:  # ✅ Verificar ambas banderas
+        while self.running and not self.force_stop:
             try:
-                # Rebalance automático
-                self.manager.rebalance()
-                
-                # Espera exactamente 10 segundos como configuraste
-                for i in range(10):  # ✅ Dividir la espera para poder interrumpir
+                # ✅ ESPERAR HASTA QUE LA GUI ESTÉ CONECTADA
+                if (hasattr(self, 'manager') and hasattr(self.manager, 'gui') 
+                    and self.manager.gui is not None and hasattr(self, 'gui') 
+                    and self.gui is not None):
+                    
+                    self.manager.rebalance()
+                else:
+                    print("⏳ Esperando conexión GUI completa...")
+                    time.sleep(5)  # Esperar 5 segundos antes de reintentar
+                    continue
+                    
+                # Espera normal de 10 segundos
+                for i in range(10):
                     if not self.running or self.force_stop:
                         break
                     time.sleep(1)
-                
+                    
             except Exception as e:
                 logging.error(f"Error in bot loop: {e}")
-                if not self.force_stop:  # ✅ Solo esperar si no estamos forzando cierre
-                    time.sleep(UPDATE_INTERVAL)
-        
-        print("Hilo del bot terminado")  # ✅ Confirmación de cierre
+                if not self.force_stop:
+                    time.sleep(10)  # Esperar más en caso de error

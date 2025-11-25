@@ -27,16 +27,9 @@ class ModernTradingGUI:
     def __init__(self, bot=None):
         print("🎨 Inicializando GUI...")
         
-        # ✅ SOLO ESTAS TRES LÍNEAS PARA EL BOT:
         self.bot = bot
         print(f"✅ Bot asignado a GUI: {self.bot is not None}")
-        if self.bot is not None:
-            self.bot.gui = self
-            print(f"✅ GUI conectada a bot existente")
-        else:
-            print("⚠️ GUI creada sin bot (será conectado después)")
         
-        # ✅ EL RESTO DEL CÓDIGO NORMAL:
         self.update_job = None
         self.data_queue = queue.Queue()
         self.updating = False
@@ -45,16 +38,72 @@ class ModernTradingGUI:
         # Configuración de matplotlib...
         plt.rcParams['figure.facecolor'] = DARK_BG
         plt.rcParams['axes.facecolor'] = CARD_BG
-        # ... resto de configuraciones
+        plt.rcParams['axes.edgecolor'] = TEXT_SECONDARY
+        plt.rcParams['axes.labelcolor'] = TEXT_COLOR
+        plt.rcParams['xtick.color'] = TEXT_SECONDARY
+        plt.rcParams['ytick.color'] = TEXT_SECONDARY
+        plt.rcParams['text.color'] = TEXT_COLOR
+        plt.rcParams['font.size'] = 10
         
+        # Configurar la ventana
         self.setup_window()
         self.setup_styles()
         self.create_widgets()
         
         self.history = self.load_history()
-        self.schedule_update()
         self.process_data_queue()
-        self.root.mainloop()
+        
+        # ✅ INICIALMENTE DESHABILITAR BOTONES
+        self.start_btn.config(state='disabled', bg='gray')
+        self.stop_btn.config(state='disabled', bg='gray') 
+        self.rebalance_btn.config(state='disabled', bg='gray')
+        
+        # ✅ NO USAR mainloop() AQUÍ - se controlará desde main.py con update()
+        print("✅ GUI inicializada (esperando configuración desde main.py)")
+        
+        # ✅ NO HAY self.root.mainloop() AL FINAL
+
+    def enable_bot_controls(self):
+        """✅ HABILITAR controles del bot después de conexión exitosa"""
+        print("🎛️ Habilitando controles del bot en GUI...")
+        self.start_btn.config(state='normal', bg=ACCENT_COLOR)
+        self.stop_btn.config(state='normal', bg=DANGER_COLOR)
+        self.rebalance_btn.config(state='normal', bg=WARNING_COLOR)
+        
+        # ✅ INICIAR ACTUALIZACIONES DESPUÉS DE QUE EL LOOP PRINCIPAL ESTÉ EJECUTÁNDOSE
+        self.root.after(1000, self.safe_start_updates)  # Esperar 1 segundo
+        print("✅ Controles habilitados - actualizaciones programadas")
+
+    def safe_start_updates(self):
+        """Iniciar actualizaciones de forma segura después de que el loop esté activo"""
+        print("🔄 Iniciando actualizaciones automáticas...")
+        # ✅ INICIAR LA PRIMERA ACTUALIZACIÓN
+        self.safe_update_ui()
+
+
+    def verify_initial_connection(self):
+        """Verifica el estado inicial de la conexión"""
+        if self.bot:
+            bot_has_gui = hasattr(self.bot, 'gui') and self.bot.gui is not None
+            manager_has_gui = hasattr(self.bot, 'manager') and hasattr(self.bot.manager, 'gui') and self.bot.manager.gui is not None
+            account_has_gui = hasattr(self.bot, 'account') and hasattr(self.bot.account, 'gui') and self.bot.account.gui is not None
+            
+            print(f"🔍 Conexiones iniciales - Bot: {bot_has_gui}, Manager: {manager_has_gui}, Account: {account_has_gui}")
+            
+            if bot_has_gui and manager_has_gui and account_has_gui:
+                print("✅ GUI completamente conectada a todos los componentes")
+                self.log_trade("✅ GUI completamente conectada al bot", 'GREEN')
+            else:
+                missing_components = []
+                if not bot_has_gui: missing_components.append("Bot")
+                if not manager_has_gui: missing_components.append("Manager")
+                if not account_has_gui: missing_components.append("Account")
+                
+                print(f"⚠️ Conexiones incompletas: {', '.join(missing_components)}")
+                self.log_trade(f"⚠️ Conexiones incompletas: {', '.join(missing_components)}", 'YELLOW')
+        else:
+            print("❌ No hay bot conectado a la GUI")
+            self.log_trade("❌ No hay bot conectado - use 'Reiniciar App'", 'RED')
 
     def setup_window(self):
         """Configura la ventana principal"""
@@ -466,7 +515,7 @@ class ModernTradingGUI:
         self.data_queue.put(("portfolio", portfolio_data))
 
     def process_data_queue(self):
-        """Procesa la cola de datos de forma thread-safe"""
+        """Procesa la cola de datos de forma thread-safe EN EL HILO PRINCIPAL"""
         try:
             while True:
                 item = self.data_queue.get_nowait()
@@ -478,10 +527,18 @@ class ModernTradingGUI:
                     self._update_metrics_ui(item[1])
                 elif item[0] == "portfolio":
                     self._update_portfolio_ui(item[1])
+                elif item[0] == "chart_update":
+                    self._update_main_chart(item[1])
         except queue.Empty:
             pass
         finally:
-            self.root.after(100, self.process_data_queue)
+            # ✅ PROGRAMAR SIGUIENTE ACTUALIZACIÓN SI EL BOT ESTÁ EJECUTÁNDOSE
+            if (hasattr(self, 'bot') and self.bot is not None and 
+                hasattr(self.bot, 'running') and self.bot.running and
+                not self.updating):
+                self.root.after(5000, self.safe_update_ui)  # 5 segundos
+            else:
+                self.root.after(1000, self.process_data_queue)  # Revisar cada segundo
 
     def _add_log_message(self, msg, color="white"):
         """Agrega mensaje al log con colores específicos"""
@@ -635,29 +692,25 @@ class ModernTradingGUI:
         
         self.portfolio_canvas.draw()
 
-    def schedule_update(self):
-        """Programa la siguiente actualización"""
-        if self.update_job:
-            self.root.after_cancel(self.update_job)
-        self.update_job = self.root.after(5000, self.safe_update_ui)
-
     def safe_update_ui(self):
-        """Inicia actualización en hilo separado"""
-        if not self.updating and hasattr(self.bot, 'running'):
+        """Inicia actualización en hilo separado de forma segura"""
+        if (not self.updating and self.bot is not None and 
+            hasattr(self.bot, 'running') and self.bot.running):
             self.updating = True
             threading.Thread(target=self._background_update, daemon=True).start()
 
     def _background_update(self):
-        """Actualización en background"""
+        """Actualización en background - solo obtener datos, UI en hilo principal"""
         try:
-            # 1. Obtener balance total
+            # Verificar si el bot está completamente conectado y ejecutándose
+            if (not hasattr(self.bot, 'gui') or self.bot.gui is None or 
+                not hasattr(self.bot, 'running') or not self.bot.running):
+                print("⏳ Bot no listo, omitiendo actualización...")
+                return
+            
+            # SOLO OBTENER DATOS EN EL HILO SECUNDARIO
             total_balance = self.bot.account.get_balance_usdc()
             
-            # 2. Actualizar historial
-            now = datetime.now()
-            self.root.after(0, lambda: self._update_history(now, total_balance))
-            
-            # 3. Obtener datos de tokens
             symbol_data = {}
             for symbol in self.token_frames.keys():
                 try:
@@ -680,10 +733,8 @@ class ModernTradingGUI:
                     print(f"Error updating {symbol}: {e}")
                     continue
 
-            # 4. Obtener cartera completa
             portfolio_data = self.get_portfolio_data(total_balance)
             
-            # 5. Calcular métricas
             metrics = {
                 'total_balance': total_balance,
                 'daily_change': self.calculate_daily_change(),
@@ -691,19 +742,16 @@ class ModernTradingGUI:
                 'bot_status': "EJECUTANDO" if self.bot.running else "DETENIDO"
             }
             
-            # 6. Enviar datos a la UI
-            self.update_token_data(symbol_data)
-            self.update_metrics(metrics)
-            self.update_portfolio(portfolio_data)
+            # ✅ Pasar datos al hilo principal para actualizar UI
+            self.data_queue.put(("token_data", symbol_data))
+            self.data_queue.put(("metrics", metrics))
+            self.data_queue.put(("portfolio", portfolio_data))
+            self.data_queue.put(("chart_update", total_balance))
             
-            # 7. Actualizar gráfico principal
-            self.root.after(0, lambda: self._update_main_chart(total_balance))
-
         except Exception as e:
             print(f"Error in background update: {e}")
         finally:
-            self.updating = False
-            self.schedule_update()
+            self.updating = False  # ✅ IMPORTANTE: Marcar como no actualizando
 
     def get_portfolio_data(self, total_balance):
         """Obtiene datos completos de la cartera"""
