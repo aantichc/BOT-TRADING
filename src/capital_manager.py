@@ -164,10 +164,10 @@ class CapitalManager:
     def _weight_to_signal(self, weight):
         """Convierte peso numérico a texto de señal"""
         if weight >= 0.8:
-            return "FUERTE_COMPRA"
+            return "STRONG_BUY"
         elif weight >= 0.5:
-            return "COMPRA"
+            return "BUY"
         elif weight >= 0.3:
-            return "NEUTRAL"
+            return "SELL"
         else:
-            return "VENTA"
+            return "STRONG_SELL"

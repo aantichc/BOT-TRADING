@@ -71,7 +71,7 @@ class BinanceAccount:
             executed_price = float(order['fills'][0]['price']) if order.get('fills') else price
             executed_total = float(order['cummulativeQuoteQty']) if order.get('cummulativeQuoteQty') else usd_amount
             
-            msg = f"COMPRA{symbol}:{quantity:.1f} at ${executed_price:.2f}= ${executed_total:.2f}"
+            msg = f"BUY {symbol}:{quantity:.1f} at ${executed_price:.2f}= ${executed_total:.2f}"
             if self.gui: 
                 self.gui.log_trade(msg, 'GREEN')
             return True, msg
@@ -83,7 +83,7 @@ class BinanceAccount:
 
     def sell_market(self, symbol, quantity):
         if not TRADING_ENABLED:
-            msg = f"[SIM] 🔴 VENTA {symbol}: {quantity:.1f}"
+            msg = f"[SIM] 🔴 SELL {symbol}: {quantity:.1f}"
             if self.gui: 
                 self.gui.log_trade(msg, 'RED')
             return True, msg
