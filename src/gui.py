@@ -35,6 +35,10 @@ class ModernTradingGUI:
         self.data_queue = queue.Queue()
         self.updating = False
         self.closing = False
+
+        # ✅ INICIALIZAR CACHE DE COMISIONES
+        self._cached_fees = "$0.00"
+        self._last_fee_calc = datetime.now() - timedelta(hours=2)  # Forzar primera actualización
         
         # Configuración de matplotlib...
         plt.rcParams['figure.facecolor'] = DARK_BG
@@ -65,7 +69,180 @@ class ModernTradingGUI:
         # INICIALIZAR LIMPIEZA PERIÓDICA
         self.root.after(60000, self.setup_memory_cleanup)  # Empezar después de 1 minuto      
 
+    def setup_log_tags(self):
+        """Configura los tags de color para el log"""
+        self.log_text.tag_config('green_log', foreground="#00ff88")   # Compras/éxito
+        self.log_text.tag_config('red_log', foreground="#ff4444")     # Ventas/errores
+        self.log_text.tag_config('blue_log', foreground="#0088ff")    # Cambios de señal ← NUEVO
+        self.log_text.tag_config('yellow_log', foreground="#ffaa00")  # Advertencias
+        self.log_text.tag_config('white_log', foreground="#ffffff")   # Normal
 
+    def _add_log_message(self, msg, color="white"):
+            ts = datetime.now().strftime("%H:%M:%S")
+            
+            color_tags = {
+                'GREEN': 'green_log',
+                'RED': 'red_log', 
+                'BLUE': 'blue_log',
+                'YELLOW': 'yellow_log'
+            }
+            
+            tag = color_tags.get(color, 'white_log')
+            
+            self.log_text.insert(tk.END, f"[{ts}] {msg}\n", tag)
+            self.log_text.see(tk.END)
+            
+            # ¡LIMPIAR MÁS AGRESIVAMENTE!
+            current_lines = int(self.log_text.index('end-1c').split('.')[0])
+            if current_lines > 300:  # Reducir de 500 a 300
+                self.log_text.delete(1.0, "100.0")  # Borrar 100 líneas cada vez
+            
+            # Limitar tamaño máximo absoluto
+            if current_lines > 1000:
+                self.log_text.delete(1.0, "500.0")  # Borrar 500 líneas drásticamente
+
+    def cleanup_memory(self):
+        """Limpieza RÁPIDA cada 5 minutos - máximo rendimiento"""
+        if self.closing:
+            return
+            
+        # SOLO LOG EN DEBUG para no saturar
+        import random
+        if random.randint(1, 10) == 1:  # Solo 10% de los cleanups
+            print("⚡ Limpieza rápida (5min) - manteniendo fluidez...")
+        
+        # 1. GARBAGE COLLECTION (instantáneo)
+        import gc
+        gc.collect()
+        
+        # 2. LIMPIEZA PREVENTIVA DE QUEUE
+        if self.data_queue.qsize() > 40:
+            try:
+                # Dejar solo los 20 más recientes
+                while self.data_queue.qsize() > 20:
+                    self.data_queue.get_nowait()
+            except queue.Empty:
+                pass
+        
+        # 3. LIMPIEZA SUAVE DE LOGS
+        current_lines = int(self.log_text.index('end-1c').split('.')[0])
+        if current_lines > 150:  # Más agresivo para fluidez
+            self.log_text.delete(1.0, "30.0")  # Solo 30 líneas
+        
+        # 4. PROGRAMAR SIGUIENTE - SIEMPRE 5 MINUTOS
+        if not self.closing:
+            self.root.after(300000, self.cleanup_memory)
+
+    def process_data_queue(self):
+        """Procesar cola con límite y limpieza"""
+        try:
+            processed_count = 0
+            MAX_PROCESS_PER_CYCLE = 20  # No procesar más de 20 items por ciclo
+            
+            while processed_count < MAX_PROCESS_PER_CYCLE:
+                item = self.data_queue.get_nowait()
+                processed_count += 1
+                
+                if item[0] == "log":
+                    self._add_log_message(item[1], item[2])
+                elif item[0] == "token_data":
+                    self._update_token_ui(item[1])
+                elif item[0] == "metrics":
+                    self._update_metrics_ui(item[1])
+                elif item[0] == "portfolio":
+                    self._update_portfolio_ui(item[1])
+                elif item[0] == "chart_update":
+                    self._update_main_chart(item[1])
+                    
+        except queue.Empty:
+            pass
+        finally:
+            # LIMPIAR COLA SI SE ESTÁ LLENANDO DEMASIADO
+            if self.data_queue.qsize() > 100:
+                print("⚠️ Limpiando queue sobrecargada...")
+                try:
+                    while self.data_queue.qsize() > 50:  # Dejar solo los 50 más recientes
+                        self.data_queue.get_nowait()
+                except queue.Empty:
+                    pass
+            
+            # Programar siguiente actualización
+            if (hasattr(self, 'bot') and self.bot is not None and 
+                hasattr(self.bot, 'running') and self.bot.running and
+                not self.updating):
+                self.root.after(20000, self.safe_update_ui)  # Aumentar a 20 segundos
+            else:
+                self.root.after(2000, self.process_data_queue)  # 2 segundos
+ 
+    def _update_token_ui(self, symbol_data):
+        """Actualiza la UI de tokens con la nueva estructura"""
+        for symbol, data in symbol_data.items():
+            if symbol in self.token_frames:
+                frame_data = self.token_frames[symbol].data
+                try:
+                    # Actualizar precio
+                    frame_data["price_label"].config(text=f"${data['price']:,.4f}")
+                    
+                    # Actualizar balance
+                    frame_data["balance_label"].config(
+                        text=f"{data['balance']:.6f} → ${data['usd']:,.2f} ({data['pct']:.1f}%)"
+                    )
+                    
+                    # Actualizar círculos de timeframes
+                    for tf, circle_data in frame_data["circles"].items():
+                        color = "gray"  # Por defecto
+                        if tf in data['signals']:
+                            signal = data['signals'][tf]
+                            color = "#00ff00" if signal == "GREEN" else "#ffff00" if signal == "YELLOW" else "#ff4444"
+                        
+                        # Actualizar el color del círculo usando el canvas y circle_id
+                        circle_data['canvas'].itemconfig(circle_data['circle_id'], fill=color)
+                    
+                    # Actualizar peso y señal general
+                    weight = data['weight']
+                    if weight >= 0.8:
+                        weight_color = "#00ff00"
+                        signal_text = "FUERTE COMPRA"
+                    elif weight >= 0.5:
+                        weight_color = "#ffff00"
+                        signal_text = "COMPRA"
+                    elif weight >= 0.3:
+                        weight_color = WARNING_COLOR
+                        signal_text = "NEUTRAL"
+                    else:
+                        weight_color = DANGER_COLOR
+                        signal_text = "VENTA"
+                    
+                    frame_data["weight_label"].config(
+                        text=f"PESO: {weight:.2f}", 
+                        fg=weight_color
+                    )
+                    frame_data["signal_label"].config(
+                        text=f"SEÑAL: {signal_text}",
+                        font=("Arial", 9)
+                    )
+                    
+                except Exception as e:
+                    print(f"Error updating {symbol} UI: {e}")
+
+    def _update_metrics_ui(self, metrics):
+        """Actualiza todas las nuevas métricas"""
+        self.total_balance_label.config(text=f"${metrics['total_balance']:,.2f}")
+        
+        # SOLO los 8 timeframes compactos
+        self.change_30m_label.config(text=metrics['change_30m'])
+        self.change_1h_label.config(text=metrics['change_1h'])
+        self.change_2h_label.config(text=metrics['change_2h'])
+        self.change_4h_label.config(text=metrics['change_4h'])
+        self.change_1d_label.config(text=metrics['change_1d'])
+        self.change_1w_label.config(text=metrics['change_1w'])
+        self.change_1m_label.config(text=metrics['change_1m'])
+        self.change_1y_label.config(text=metrics['change_1y'])
+        
+        self.total_fees_label.config(text=metrics['total_fees'])
+        
+        # Aplicar colores
+        self.apply_change_colors(metrics)
 
     def enable_bot_controls(self):
         """✅ HABILITAR controles del bot después de conexión exitosa"""
@@ -83,7 +260,6 @@ class ModernTradingGUI:
         print("🔄 Iniciando actualizaciones automáticas...")
         # ✅ INICIAR LA PRIMERA ACTUALIZACIÓN
         self.safe_update_ui()
-
 
     def verify_initial_connection(self):
         """Verifica el estado inicial de la conexión"""
@@ -165,6 +341,25 @@ class ModernTradingGUI:
                     foreground=TEXT_COLOR,
                     relief='flat')
 
+    def create_compact_metric(self, parent, timeframe, value, color):
+        """Crea métrica ultra-compacta para timeframes"""
+        metric_frame = tk.Frame(parent, bg=CARD_BG, relief='flat', bd=1,
+                            highlightbackground=TEXT_SECONDARY, highlightthickness=1,
+                            width=80, height=45)
+        metric_frame.pack(side=tk.LEFT, padx=(0, 5))
+        metric_frame.pack_propagate(False)
+        
+        # Timeframe (pequeño)
+        tk.Label(metric_frame, text=timeframe, bg=CARD_BG, fg=TEXT_SECONDARY,
+                font=("Arial", 8, "bold")).pack(pady=(5, 0))
+        
+        # Valor (compacto)
+        value_label = tk.Label(metric_frame, text=value, bg=CARD_BG, fg=color,
+                            font=("Arial", 9, "bold"))
+        value_label.pack(pady=(0, 5))
+        
+        return value_label
+
     def create_widgets(self):        
         """Crea todos los widgets de la interfaz"""
         # Header
@@ -215,21 +410,38 @@ class ModernTradingGUI:
         top_row = tk.Frame(main_container, bg=DARK_BG)
         top_row.pack(fill=tk.X, pady=(0, 20))
 
-        # Métricas principales
+        # Métricas principales - VERSIÓN COMPACTADA
         metrics_frame = tk.Frame(top_row, bg=DARK_BG)
         metrics_frame.pack(side=tk.LEFT, fill=tk.Y)
 
         self.total_balance_label = self.create_metric_card(
             metrics_frame, "💰 BALANCE TOTAL", "$0.00", ACCENT_COLOR
         )
-        self.daily_change_label = self.create_metric_card(
-            metrics_frame, "📊 CAMBIO 24H", "+0.00%", TEXT_SECONDARY
-        )
-        self.active_trades_label = self.create_metric_card(
-            metrics_frame, "🔢 ACTIVOS ACTIVOS", "0/0", TEXT_SECONDARY
-        )
-        self.bot_status_label = self.create_metric_card(
-            metrics_frame, "🤖 ESTADO BOT", "DETENIDO", DANGER_COLOR
+
+        # CONTENEDOR COMPACTO PARA TIMEFRAMES
+        timeframe_container = tk.Frame(metrics_frame, bg=DARK_BG)
+        timeframe_container.pack(fill=tk.X, pady=(0, 10))
+
+        # Fila 1: Timeframes cortos
+        short_tf_frame = tk.Frame(timeframe_container, bg=DARK_BG)
+        short_tf_frame.pack(fill=tk.X, pady=(0, 5))
+
+        self.change_30m_label = self.create_compact_metric(short_tf_frame, "30m", "+0.00%", TEXT_SECONDARY)
+        self.change_1h_label = self.create_compact_metric(short_tf_frame, "1h", "+0.00%", TEXT_SECONDARY)
+        self.change_2h_label = self.create_compact_metric(short_tf_frame, "2h", "+0.00%", TEXT_SECONDARY)
+        self.change_4h_label = self.create_compact_metric(short_tf_frame, "4h", "+0.00%", TEXT_SECONDARY)
+
+        # Fila 2: Timeframes largos
+        long_tf_frame = tk.Frame(timeframe_container, bg=DARK_BG)
+        long_tf_frame.pack(fill=tk.X, pady=(0, 5))
+
+        self.change_1d_label = self.create_compact_metric(long_tf_frame, "1D", "+0.00%", TEXT_SECONDARY)
+        self.change_1w_label = self.create_compact_metric(long_tf_frame, "1W", "+0.00%", TEXT_SECONDARY)
+        self.change_1m_label = self.create_compact_metric(long_tf_frame, "1M", "+0.00%", TEXT_SECONDARY)
+        self.change_1y_label = self.create_compact_metric(long_tf_frame, "1Y", "+0.00%", TEXT_SECONDARY)
+
+        self.total_fees_label = self.create_metric_card(
+            metrics_frame, "💸 COMISIONES TOTALES", "$0.00", DANGER_COLOR
         )
 
         # Gráfico principal
@@ -544,7 +756,6 @@ class ModernTradingGUI:
         except Exception as e:
             print(f"❌ Error guardando historial: {e}")
 
-    # Métodos de actualización y comunicación (similares a los anteriores)
     def safe_start(self):
         """Inicia el bot de forma segura"""
         if self.bot is None:
@@ -610,207 +821,31 @@ class ModernTradingGUI:
     def update_portfolio(self, portfolio_data):
         self.data_queue.put(("portfolio", portfolio_data))
 
-    def process_data_queue(self):
-        """Procesar cola con límite y limpieza"""
-        try:
-            processed_count = 0
-            MAX_PROCESS_PER_CYCLE = 20  # No procesar más de 20 items por ciclo
-            
-            while processed_count < MAX_PROCESS_PER_CYCLE:
-                item = self.data_queue.get_nowait()
-                processed_count += 1
-                
-                if item[0] == "log":
-                    self._add_log_message(item[1], item[2])
-                elif item[0] == "token_data":
-                    self._update_token_ui(item[1])
-                elif item[0] == "metrics":
-                    self._update_metrics_ui(item[1])
-                elif item[0] == "portfolio":
-                    self._update_portfolio_ui(item[1])
-                elif item[0] == "chart_update":
-                    self._update_main_chart(item[1])
-                    
-        except queue.Empty:
-            pass
-        finally:
-            # LIMPIAR COLA SI SE ESTÁ LLENANDO DEMASIADO
-            if self.data_queue.qsize() > 100:
-                print("⚠️ Limpiando queue sobrecargada...")
-                try:
-                    while self.data_queue.qsize() > 50:  # Dejar solo los 50 más recientes
-                        self.data_queue.get_nowait()
-                except queue.Empty:
-                    pass
-            
-            # Programar siguiente actualización
-            if (hasattr(self, 'bot') and self.bot is not None and 
-                hasattr(self.bot, 'running') and self.bot.running and
-                not self.updating):
-                self.root.after(20000, self.safe_update_ui)  # Aumentar a 20 segundos
-            else:
-                self.root.after(2000, self.process_data_queue)  # 2 segundos
-
     def setup_memory_cleanup(self):
         """Limpieza periódica de memoria"""
         self.root.after(300000, self.cleanup_memory)  # Cada 5 minutos
 
-    def _add_log_message(self, msg, color="white"):
-        ts = datetime.now().strftime("%H:%M:%S")
-        
-        color_tags = {
-            'GREEN': 'green_log',
-            'RED': 'red_log', 
-            'BLUE': 'blue_log',
-            'YELLOW': 'yellow_log'
+    def apply_change_colors(self, metrics):
+        """Aplica colores verde/rojo según cambios positivos/negativos"""
+        changes = {
+            'change_30m': self.change_30m_label,
+            'change_1h': self.change_1h_label,
+            'change_2h': self.change_2h_label,
+            'change_4h': self.change_4h_label,
+            'change_1d': self.change_1d_label,
+            'change_1w': self.change_1w_label,
+            'change_1m': self.change_1m_label,
+            'change_1y': self.change_1y_label
         }
         
-        tag = color_tags.get(color, 'white_log')
-        
-        self.log_text.insert(tk.END, f"[{ts}] {msg}\n", tag)
-        self.log_text.see(tk.END)
-        
-        # ¡LIMPIAR MÁS AGRESIVAMENTE!
-        current_lines = int(self.log_text.index('end-1c').split('.')[0])
-        if current_lines > 300:  # Reducir de 500 a 300
-            self.log_text.delete(1.0, "100.0")  # Borrar 100 líneas cada vez
-        
-        # Limitar tamaño máximo absoluto
-        if current_lines > 1000:
-            self.log_text.delete(1.0, "500.0")  # Borrar 500 líneas drásticamente
-
-    def setup_log_tags(self):
-        """Configura los tags de color para el log"""
-        self.log_text.tag_config('green_log', foreground="#00ff88")   # Compras/éxito
-        self.log_text.tag_config('red_log', foreground="#ff4444")     # Ventas/errores
-        self.log_text.tag_config('blue_log', foreground="#0088ff")    # Cambios de señal ← NUEVO
-        self.log_text.tag_config('yellow_log', foreground="#ffaa00")  # Advertencias
-        self.log_text.tag_config('white_log', foreground="#ffffff")   # Normal
-
-
-    def _update_token_ui(self, symbol_data):
-        """Actualiza la UI de tokens con la nueva estructura"""
-        for symbol, data in symbol_data.items():
-            if symbol in self.token_frames:
-                frame_data = self.token_frames[symbol].data
-                try:
-                    # Actualizar precio
-                    frame_data["price_label"].config(text=f"${data['price']:,.4f}")
-                    
-                    # Actualizar balance
-                    frame_data["balance_label"].config(
-                        text=f"{data['balance']:.6f} → ${data['usd']:,.2f} ({data['pct']:.1f}%)"
-                    )
-                    
-                    # Actualizar círculos de timeframes
-                    for tf, circle_data in frame_data["circles"].items():
-                        color = "gray"  # Por defecto
-                        if tf in data['signals']:
-                            signal = data['signals'][tf]
-                            color = "#00ff00" if signal == "GREEN" else "#ffff00" if signal == "YELLOW" else "#ff4444"
-                        
-                        # Actualizar el color del círculo usando el canvas y circle_id
-                        circle_data['canvas'].itemconfig(circle_data['circle_id'], fill=color)
-                    
-                    # Actualizar peso y señal general
-                    weight = data['weight']
-                    if weight >= 0.8:
-                        weight_color = "#00ff00"
-                        signal_text = "FUERTE COMPRA"
-                    elif weight >= 0.5:
-                        weight_color = "#ffff00"
-                        signal_text = "COMPRA"
-                    elif weight >= 0.3:
-                        weight_color = WARNING_COLOR
-                        signal_text = "NEUTRAL"
-                    else:
-                        weight_color = DANGER_COLOR
-                        signal_text = "VENTA"
-                    
-                    frame_data["weight_label"].config(
-                        text=f"PESO: {weight:.2f}", 
-                        fg=weight_color
-                    )
-                    frame_data["signal_label"].config(
-                        text=f"SEÑAL: {signal_text}",
-                        font=("Arial", 9)
-                    )
-                    
-                except Exception as e:
-                    print(f"Error updating {symbol} UI: {e}")
-
-    def _update_metrics_ui(self, metrics):
-        """Actualiza las métricas principales"""
-        self.total_balance_label.config(text=f"${metrics['total_balance']:,.2f}")
-        self.daily_change_label.config(text=metrics['daily_change'])
-        self.active_trades_label.config(text=metrics['active_trades'])
-        self.bot_status_label.config(
-            text=metrics['bot_status'], 
-            fg=ACCENT_COLOR if metrics['bot_status'] == "EJECUTANDO" else DANGER_COLOR
-        )
-
-    def _update_portfolio_ui(self, portfolio_data):
-        """Actualiza la visualización de la cartera"""
-        # Limpiar treeview
-        for item in self.portfolio_tree.get_children():
-            self.portfolio_tree.delete(item)
-        
-        # Agregar datos
-        total_balance = portfolio_data['total_balance']
-        for asset in portfolio_data['assets']:
-            if asset['usd_value'] > 1:  # Mostrar solo activos con valor significativo
-                self.portfolio_tree.insert('', 'end', values=(
-                    asset['asset'],
-                    f"{asset['balance']:.6f}",
-                    f"${asset['usd_value']:,.2f}",
-                    f"{asset['percentage']:.1f}%"
-                ))
-        
-        # Actualizar gráfico de torta - CORREGIDO con colores más saturados y texto blanco
-        self.portfolio_ax.clear()
-        
-        assets = [a for a in portfolio_data['assets'] if a['usd_value'] > total_balance * 0.01]  # > 1% del total
-        if assets:
-            labels = [a['asset'] for a in assets]
-            sizes = [a['usd_value'] for a in assets]
-            
-            # Colores más saturados y oscuros - paleta mejorada
-            saturated_colors = [
-                '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', 
-                '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
-                '#F8C471', '#82E0AA', '#F1948A', '#85C1E9', '#D7BDE2'
-            ]
-            
-            # Asegurar que tenemos suficientes colores
-            colors = saturated_colors * (len(assets) // len(saturated_colors) + 1)
-            colors = colors[:len(assets)]
-            
-            # Gráfico de torta con texto en BLANCO y colores saturados
-            wedges, texts, autotexts = self.portfolio_ax.pie(
-                sizes, 
-                labels=labels, 
-                colors=colors, 
-                autopct='%1.1f%%',
-                startangle=90, 
-                textprops={'color': 'white', 'fontsize': 8, 'weight': 'bold'},
-                wedgeprops={'edgecolor': 'white', 'linewidth': 0.5}
-            )
-            
-            # Configurar el color de los textos de porcentaje a BLANCO
-            for autotext in autotexts:
-                autotext.set_color('black')
-                autotext.set_weight('bold')
-            
-            # Configurar el color de las etiquetas a BLANCO
-            for text in texts:
-                text.set_color('white')
-                text.set_weight('bold')
-            
-            self.portfolio_ax.set_title('Distribución de Cartera', color='white', fontsize=12, weight='bold')
-        
-        self.portfolio_canvas.draw()
-
-    
+        for change_key, label in changes.items():
+            value = metrics.get(change_key, "+0.00%")
+            if value.startswith('+'):
+                label.config(fg=ACCENT_COLOR)  # Verde para positivo
+            elif value.startswith('-'):
+                label.config(fg=DANGER_COLOR)  # Rojo para negativo
+            else:
+                label.config(fg=TEXT_SECONDARY)  # Gris para neutro
 
     def safe_update_ui(self):
         """Inicia actualización en hilo separado de forma segura - EVITA DUPLICADOS"""
@@ -826,63 +861,178 @@ class ModernTradingGUI:
         if not self.closing and self.bot is not None and self.bot.running:
             self.root.after(20000, self.safe_update_ui)  # 20 segundos
 
-    def _background_update(self):
-        """Actualización en background - solo obtener datos, UI en hilo principal"""
+    def calculate_all_performance_metrics(self, total_balance):
+        """Calcula todas las métricas de rendimiento"""
+        return {
+            'change_30m': self.calculate_period_change(minutes=30),
+            'change_1h': self.calculate_period_change(hours=1),
+            'change_2h': self.calculate_period_change(hours=2),
+            'change_4h': self.calculate_period_change(hours=4),
+            'change_24h': self.calculate_period_change(hours=24),
+            'change_1d': self.calculate_period_change(hours=24),  # Alias para 24h
+            'change_1w': self.calculate_period_change(days=7),
+            'change_1m': self.calculate_period_change(days=30),
+            'change_1y': self.calculate_period_change(days=365),
+            'total_fees': self.calculate_total_fees(),
+            'token_performance': self.calculate_all_tokens_performance(),
+            'timeframe_performance': self.calculate_timeframe_performance()
+        }
+
+    def calculate_period_change(self, hours=0, minutes=0, days=0):
+        """Calcula cambio porcentual para cualquier período"""
+        if len(self.history) < 2:
+            return "+0.00%"
+        
+        # Calcular timestamp de inicio del período
+        period_start = datetime.now()
+        if days > 0:
+            period_start -= timedelta(days=days)
+        elif hours > 0:
+            period_start -= timedelta(hours=hours)
+        elif minutes > 0:
+            period_start -= timedelta(minutes=minutes)
+        
+        # Encontrar valor más cercano al inicio del período
+        start_value = None
+        closest_time_diff = float('inf')
+        
+        for dt, val in self.history:
+            time_diff = abs((dt - period_start).total_seconds())
+            if time_diff < closest_time_diff:
+                closest_time_diff = time_diff
+                start_value = val
+        
+        current_value = self.history[-1][1] if self.history else 0
+        
+        if start_value is None or start_value == 0:
+            return "+0.00%"
+        
+        change = ((current_value - start_value) / start_value) * 100
+        sign = "+" if change >= 0 else ""
+        return f"{sign}{change:.2f}%"
+
+    def calculate_total_fees(self):
+        """Calcula comisiones basadas en volumen REAL tradeado - ACTUALIZACIÓN CADA HORA"""
         try:
-            # Verificar si el bot está completamente conectado y ejecutándose
-            if (not hasattr(self.bot, 'gui') or self.bot.gui is None or 
-                not hasattr(self.bot, 'running') or not self.bot.running):
-                print("⏳ Bot no listo, omitiendo actualización...")
-                return
+            # Cachear para no saturar la API - ACTUALIZAR CADA HORA
+            current_time = datetime.now()
+            if hasattr(self, '_last_fee_calc') and \
+            (current_time - self._last_fee_calc).total_seconds() < 3600:  # 1 hora cache
+                return getattr(self, '_cached_fees', "$0.00")
             
-            # SOLO OBTENER DATOS EN EL HILO SECUNDARIO
-            total_balance = self.bot.account.get_balance_usdc()
+            print("🔄 Calculando comisiones precisas (actualización horaria)...")
             
-            # ✅ ACTUALIZAR HISTORIAL - ESTO ES LO QUE FALTABA
-            now = datetime.now()
-            self._update_history(now, total_balance)
+            total_volume = 0.0
+            trade_count = 0
             
-            symbol_data = {}
+            # Obtener trades de los últimos 90 días para TODOS los símbolos
+            start_time = int((current_time - timedelta(days=90)).timestamp() * 1000)
+            
             for symbol in self.token_frames.keys():
                 try:
-                    signals = self.bot.manager.get_signals(symbol)
-                    weight = self.bot.manager.calculate_weight(signals)
-                    price = self.bot.account.get_current_price(symbol)
-                    balance = self.bot.account.get_symbol_balance(symbol)
-                    usd_value = balance * price
-                    pct = (usd_value / total_balance * 100) if total_balance > 0 else 0
-
-                    symbol_data[symbol] = {
-                        'signals': signals,
-                        'weight': weight,
-                        'price': price,
-                        'balance': balance,
-                        'usd': usd_value,
-                        'pct': pct
-                    }
+                    trades = self.bot.client.get_my_trades(
+                        symbol=symbol, 
+                        startTime=start_time,
+                        limit=1000  # Máximo permitido por Binance
+                    )
+                    
+                    for trade in trades:
+                        quote_qty = float(trade['quoteQty'])
+                        total_volume += quote_qty
+                        trade_count += 1
+                        
                 except Exception as e:
-                    print(f"Error updating {symbol}: {e}")
+                    # Algunos símbolos pueden no tener historial o dar error
                     continue
-
-            portfolio_data = self.get_portfolio_data(total_balance)
             
-            metrics = {
-                'total_balance': total_balance,
-                'daily_change': self.calculate_daily_change(),
-                'active_trades': f"{sum(1 for s in symbol_data.values() if s['usd'] > 1)}/{len(symbol_data)}",
-                'bot_status': "EJECUTANDO" if self.bot.running else "DETENIDO"
-            }
+            # Calcular comisiones (0.085% promedio - conservador)
+            fee_rate = 0.00085
+            estimated_fees = total_volume * fee_rate
             
-            # ✅ Pasar datos al hilo principal para actualizar UI
-            self.data_queue.put(("token_data", symbol_data))
-            self.data_queue.put(("metrics", metrics))
-            self.data_queue.put(("portfolio", portfolio_data))
-            self.data_queue.put(("chart_update", total_balance))
+            # Cachear resultados
+            self._cached_fees = f"${estimated_fees:.2f}"
+            self._last_fee_calc = current_time
+            
+            # Log informativo (solo en primera ejecución o cambios significativos)
+            if not hasattr(self, '_first_fee_calc'):
+                self._first_fee_calc = True
+                print(f"💰 Comisiones calculadas: {trade_count} trades, ${total_volume:,.2f} volumen → ${estimated_fees:.2f} fees")
+            
+            return self._cached_fees
             
         except Exception as e:
-            print(f"Error in background update: {e}")
-        finally:
-            self.updating = False  # ✅ IMPORTANTE: Marcar como no actualizando
+            print(f"❌ Error calculando comisiones precisas: {e}")
+            return "$0.00"
+
+    def calculate_token_performance(self, symbol, current_price):
+        """Calcula rendimiento individual de un token"""
+        try:
+            # Por simplicidad, calculamos vs precio de compra promedio
+            # En una implementación real, llevarías registro de precios de compra
+            if not hasattr(self, 'token_purchase_prices'):
+                self.token_purchase_prices = {}
+            
+            purchase_price = self.token_purchase_prices.get(symbol, current_price * 0.95)  # Placeholder
+            
+            if purchase_price == 0:
+                return "+0.00%"
+            
+            change = ((current_price - purchase_price) / purchase_price) * 100
+            sign = "+" if change >= 0 else ""
+            return f"{sign}{change:.2f}%"
+            
+        except:
+            return "+0.00%"
+
+    def calculate_all_tokens_performance(self):
+        """Calcula rendimiento de todos los tokens"""
+        performance = {}
+        for symbol in self.token_frames.keys():
+            try:
+                price = self.bot.account.get_current_price(symbol)
+                performance[symbol] = self.calculate_token_performance(symbol, price)
+            except:
+                performance[symbol] = "+0.00%"
+        return performance
+
+    def calculate_timeframe_performance(self):
+        """Calcula efectividad de cada timeframe para señales"""
+        # Placeholder - en implementación real llevarías estadísticas
+        return {
+            '30m': "+2.15%",
+            '1h': "+3.42%", 
+            '2h': "+1.87%"
+        }
+
+    def save_performance_data(self, symbol_data, performance_data):
+        """Guarda datos de rendimiento para análisis futuro"""
+        try:
+            performance_file = "performance_data.json"
+            data_to_save = {
+                'timestamp': datetime.now().isoformat(),
+                'total_balance': performance_data['change_24h'].strip('+%'),
+                'token_performance': performance_data['token_performance'],
+                'timeframe_performance': performance_data['timeframe_performance']
+            }
+            
+            # Cargar historial existente
+            if os.path.exists(performance_file):
+                with open(performance_file, "r") as f:
+                    existing_data = json.load(f)
+            else:
+                existing_data = []
+            
+            # Agregar nuevo punto (limitar a 1000 puntos)
+            existing_data.append(data_to_save)
+            if len(existing_data) > 1000:
+                existing_data = existing_data[-1000:]
+            
+            # Guardar
+            with open(performance_file, "w") as f:
+                json.dump(existing_data, f)
+                
+        except Exception as e:
+            print(f"Error guardando datos de rendimiento: {e}")
 
     def get_portfolio_data(self, total_balance):
         """Obtiene datos completos de la cartera"""
@@ -1118,3 +1268,152 @@ class ModernTradingGUI:
         except Exception as e:
             print(f"❌ Error crítico en reinicio: {e}")
             os._exit(1)
+
+    def _update_portfolio_ui(self, portfolio_data):
+        """Actualiza la visualización de la cartera"""
+        # Limpiar treeview
+        for item in self.portfolio_tree.get_children():
+            self.portfolio_tree.delete(item)
+        
+        # Agregar datos
+        total_balance = portfolio_data['total_balance']
+        for asset in portfolio_data['assets']:
+            if asset['usd_value'] > 1:  # Mostrar solo activos con valor significativo
+                self.portfolio_tree.insert('', 'end', values=(
+                    asset['asset'],
+                    f"{asset['balance']:.6f}",
+                    f"${asset['usd_value']:,.2f}",
+                    f"{asset['percentage']:.1f}%"
+                ))
+        
+        # Actualizar gráfico de torta - CORREGIDO con colores más saturados y texto blanco
+        self.portfolio_ax.clear()
+        
+        assets = [a for a in portfolio_data['assets'] if a['usd_value'] > total_balance * 0.01]  # > 1% del total
+        if assets:
+            labels = [a['asset'] for a in assets]
+            sizes = [a['usd_value'] for a in assets]
+            
+            # Colores más saturados y oscuros - paleta mejorada
+            saturated_colors = [
+                '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', 
+                '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
+                '#F8C471', '#82E0AA', '#F1948A', '#85C1E9', '#D7BDE2'
+            ]
+            
+            # Asegurar que tenemos suficientes colores
+            colors = saturated_colors * (len(assets) // len(saturated_colors) + 1)
+            colors = colors[:len(assets)]
+            
+            # Gráfico de torta con texto en BLANCO y colores saturados
+            wedges, texts, autotexts = self.portfolio_ax.pie(
+                sizes, 
+                labels=labels, 
+                colors=colors, 
+                autopct='%1.1f%%',
+                startangle=90, 
+                textprops={'color': 'white', 'fontsize': 8, 'weight': 'bold'},
+                wedgeprops={'edgecolor': 'white', 'linewidth': 0.5}
+            )
+            
+            # Configurar el color de los textos de porcentaje a BLANCO
+            for autotext in autotexts:
+                autotext.set_color('black')
+                autotext.set_weight('bold')
+            
+            # Configurar el color de las etiquetas a BLANCO
+            for text in texts:
+                text.set_color('white')
+                text.set_weight('bold')
+            
+            self.portfolio_ax.set_title('Distribución de Cartera', color='white', fontsize=12, weight='bold')
+        
+        self.portfolio_canvas.draw()
+
+    def _background_update(self):
+        """Actualización en background con gestión inteligente de comisiones"""
+        try:
+            # Verificar si el bot está completamente conectado y ejecutándose
+            if (not hasattr(self.bot, 'gui') or self.bot.gui is None or 
+                not hasattr(self.bot, 'running') or not self.bot.running):
+                print("⏳ Bot no listo, omitiendo actualización...")
+                return
+            
+            # SOLO OBTENER DATOS EN EL HILO SECUNDARIO
+            total_balance = self.bot.account.get_balance_usdc()
+            
+            # ✅ ACTUALIZAR HISTORIAL
+            now = datetime.now()
+            self._update_history(now, total_balance)
+            
+            # ✅ CALCULAR COMISIONES - VERIFICAR SI NECESITA ACTUALIZACIÓN
+            current_time = datetime.now()
+            needs_fee_update = (
+                not hasattr(self, '_last_fee_calc') or 
+                (current_time - self._last_fee_calc).total_seconds() >= 3600  # 1 hora
+            )
+            
+            # ✅ CALCULAR TODAS LAS NUEVAS MÉTRICAS DE RENDIMIENTO
+            performance_data = self.calculate_all_performance_metrics(total_balance)
+            
+            # ✅ OBTENER DATOS DE TOKENS (existente)
+            symbol_data = {}
+            for symbol in self.token_frames.keys():
+                try:
+                    signals = self.bot.manager.get_signals(symbol)
+                    weight = self.bot.manager.calculate_weight(signals)
+                    price = self.bot.account.get_current_price(symbol)
+                    balance = self.bot.account.get_symbol_balance(symbol)
+                    usd_value = balance * price
+                    pct = (usd_value / total_balance * 100) if total_balance > 0 else 0
+                    
+                    symbol_data[symbol] = {
+                        'signals': signals,
+                        'weight': weight,
+                        'price': price,
+                        'balance': balance,
+                        'usd': usd_value,
+                        'pct': pct
+                    }
+                except Exception as e:
+                    print(f"Error updating {symbol}: {e}")
+                    continue
+
+            # ✅ OBTENER DATOS DE CARTERA (existente)
+            portfolio_data = self.get_portfolio_data(total_balance)
+            
+            # ✅ MÉTRICAS COMPLETAS CON NUEVOS CAMPOS
+            metrics = {
+                # Métricas principales
+                'total_balance': total_balance,
+                
+                # Cambios temporales
+                'change_30m': performance_data['change_30m'],
+                'change_1h': performance_data['change_1h'],
+                'change_2h': performance_data['change_2h'],
+                'change_4h': performance_data['change_4h'],
+                'change_1d': performance_data['change_1d'],
+                'change_1w': performance_data['change_1w'],
+                'change_1m': performance_data['change_1m'],
+                'change_1y': performance_data['change_1y'],
+                
+                # Comisiones ACTUALIZADAS cada hora
+                'total_fees': self.calculate_total_fees(),  # ← Ahora con cache inteligente
+                
+                # Métricas existentes
+                'active_trades': f"{sum(1 for s in symbol_data.values() if s['usd'] > 1)}/{len(symbol_data)}",
+                'bot_status': "EJECUTANDO" if self.bot.running else "DETENIDO"
+            }
+            
+            # ✅ Pasar datos al hilo principal para actualizar UI
+            self.data_queue.put(("token_data", symbol_data))
+            self.data_queue.put(("metrics", metrics))
+            self.data_queue.put(("portfolio", portfolio_data))
+            self.data_queue.put(("chart_update", total_balance))
+            
+        except Exception as e:
+            print(f"Error in background update: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            self.updating = False
