@@ -106,11 +106,21 @@ class ModernTradingGUI:
             self.log_trade("❌ No hay bot conectado - use 'Reiniciar App'", 'RED')
 
     def setup_window(self):
-        """Configura la ventana principal"""
+        """Configura la ventana principal - MAXIMIZADA PERO NO PANTALLA COMPLETA"""
         self.root = tk.Tk()
         self.root.title("🚀 CRYPTO TRADING BOT - DASHBOARD")
-        self.root.geometry("1600x900")  # Un poco más pequeña pero suficiente
         self.root.configure(bg=DARK_BG)
+        
+        # ✅ VENTANA MAXIMIZADA (con barra de título y controles)
+        self.root.state('zoomed')  # Esto maximiza la ventana en Windows
+        
+        # Opcional: También puedes usar geometry para asegurar
+        # screen_width = self.root.winfo_screenwidth()
+        # screen_height = self.root.winfo_screenheight()
+        # self.root.geometry(f"{screen_width}x{screen_height}+0+0")
+        
+        print("🖥️ Ventana configurada en modo maximizado")
+        
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def setup_styles(self):
