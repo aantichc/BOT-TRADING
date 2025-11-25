@@ -159,7 +159,7 @@ class CapitalManager:
         else:
             return ""  # No loggear si no hay cambio real
         
-        return f"{symbol}: {direction} {old_weight} → {new_weight}"
+        return f"{symbol}: {direction} {old_weight:.2f} → {new_weight:.2f}"
 
     def _weight_to_signal(self, weight):
         """Convierte peso numérico a texto de señal"""
