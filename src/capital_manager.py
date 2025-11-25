@@ -11,6 +11,7 @@ class CapitalManager:
         self.base_allocation = 1.0 / len(SYMBOLS)
         self.last_weights = {s: 0.0 for s in SYMBOLS}
         self.SYMBOLS = SYMBOLS      # ← SIN ESTO self.bot.manager.SYMBOLS daba error
+        self.initialized = False  # ✅ NUEVO FLAG
     
     def get_signals(self, symbol):
         signals = {}
@@ -43,16 +44,22 @@ class CapitalManager:
             return "No capital"
         
         actions = []
+        
         for symbol in SYMBOLS:
             signals = self.get_signals(symbol)
             weight = self.calculate_weight(signals)
             
-            # ✅ DETECTAR CAMBIO DE SEÑAL
+            # ✅ EVITAR LOGS DE INICIALIZACIÓN
             old_weight = self.last_weights.get(symbol, 0.0)
             signal_changed = self.has_changed(symbol, weight)
             
+            # Si es la primera vez, establecer pesos sin log
+            if not self.initialized:
+                self.last_weights[symbol] = weight
+                continue
+            
             if signal_changed or manual:
-                # ✅ NOTIFICAR CAMBIO DE SEÑAL EN LOGS
+                # ✅ SOLO LOGGEAR CAMBIOS REALES (no inicialización)
                 if signal_changed and not manual:
                     signal_change_msg = self._get_signal_change_message(symbol, signals, old_weight, weight)
                     actions.append(signal_change_msg)
@@ -94,11 +101,43 @@ class CapitalManager:
                             if self.gui:
                                 self.gui.log_trade(error_msg, 'RED')
         
+        # ✅ MARCAR COMO INICIALIZADO DESPUÉS DEL PRIMER CICLO
+        if not self.initialized:
+            self.initialized = True
+            # ✅ LOG INICIAL ÚTIL - RESUMEN DE SEÑALES ACTUALES
+            initial_summary = self._get_initial_summary()
+            actions.append(initial_summary)
+            if self.gui:
+                self.gui.log_trade(initial_summary, 'BLUE')
+        
         return actions if actions else "No ajustes necesarios"
+    
+    def _get_initial_summary(self):
+        """Genera un resumen limpio de las señales iniciales"""
+        summary_lines = ["📊 SEÑALES INICIALES:"]
+        
+        for symbol in self.SYMBOLS:
+            signals = self.get_signals(symbol)
+            weight = self.calculate_weight(signals)
+            
+            # Convertir señales a emojis
+            signal_emojis = []
+            for tf in ["30m", "1h", "2h"]:
+                if tf in signals:
+                    signal = signals[tf]
+                    emoji = "🟢" if signal == "GREEN" else "🟡" if signal == "YELLOW" else "🔴"
+                    signal_emojis.append(f"{tf}{emoji}")
+            
+            signals_str = " ".join(signal_emojis)
+            signal_text = self._weight_to_signal(weight)
+            
+            summary_lines.append(f"   {symbol}: {signal_text} | Peso: {weight:.2f} | {signals_str}")
+        
+        return "\n".join(summary_lines)
 
     def _get_signal_change_message(self, symbol, signals, old_weight, new_weight):
-        """Genera mensaje de cambio de señal"""
-        # Determinar señal anterior
+        """Genera mensaje de cambio de señal - MÁS CLARO"""
+        # Determinar señal anterior y nueva
         old_signal = self._weight_to_signal(old_weight)
         new_signal = self._weight_to_signal(new_weight)
         
@@ -110,6 +149,7 @@ class CapitalManager:
         
         timeframes_str = " ".join(timeframe_changes)
         
+        # Mensaje más claro
         if new_weight > old_weight:
             direction = "📈 MEJORÓ"
             color_indicator = "🟢"
@@ -117,10 +157,9 @@ class CapitalManager:
             direction = "📉 EMPEORÓ" 
             color_indicator = "🔴"
         else:
-            direction = "🔄 CAMBIÓ"
-            color_indicator = "🟡"
+            return ""  # No loggear si no hay cambio real
         
-        return f"{color_indicator} SEÑAL {symbol}: {direction} | {old_signal} → {new_signal} | Peso: {old_weight:.2f} → {new_weight:.2f} | {timeframes_str}"
+        return f"{color_indicator} {symbol}: {direction} | {old_signal} → {new_signal} | {timeframes_str}"
 
     def _weight_to_signal(self, weight):
         """Convierte peso numérico a texto de señal"""
