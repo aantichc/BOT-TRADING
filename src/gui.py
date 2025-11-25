@@ -73,9 +73,36 @@ class ModernTradingGUI:
         style.configure('TFrame', background=DARK_BG)
         style.configure('TLabel', background=DARK_BG, foreground=TEXT_COLOR)
         style.configure('TButton', background=ACCENT_COLOR, foreground='black')
-        style.configure('TCombobox', fieldbackground=CARD_BG, background=CARD_BG, foreground=TEXT_COLOR)
+        
+        # Estilo para Combobox en tema oscuro - CORREGIDO
+        style.configure('Dark.TCombobox', 
+                    fieldbackground=CARD_BG, 
+                    background=CARD_BG, 
+                    foreground=TEXT_COLOR,
+                    insertcolor=TEXT_COLOR,  # Color del cursor
+                    borderwidth=1,
+                    relief='flat')
+        
+        # Configurar el mapa para los estados del Combobox
+        style.map('Dark.TCombobox',
+                fieldbackground=[('readonly', CARD_BG)],
+                background=[('readonly', CARD_BG)],
+                foreground=[('readonly', TEXT_COLOR)])
+        
+        # Estilo para Treeview en tema oscuro
+        style.configure('Treeview',
+                    background=CARD_BG,
+                    foreground=TEXT_COLOR,
+                    fieldbackground=CARD_BG,
+                    borderwidth=0)
+        style.map('Treeview', background=[('selected', SECONDARY_COLOR)])
+        
+        style.configure('Treeview.Heading',
+                    background=DARK_BG,
+                    foreground=TEXT_COLOR,
+                    relief='flat')
 
-    def create_widgets(self):
+    def create_widgets(self):        
         """Crea todos los widgets de la interfaz"""
         # Header
         header = tk.Frame(self.root, bg=DARK_BG, height=80)
@@ -89,23 +116,32 @@ class ModernTradingGUI:
         control_frame = tk.Frame(header, bg=DARK_BG)
         control_frame.pack(side=tk.RIGHT)
         
-        self.create_button(control_frame, "▶ START", ACCENT_COLOR, self.safe_start).pack(side=tk.LEFT, padx=5)
-        self.create_button(control_frame, "⏹ STOP", DANGER_COLOR, self.safe_stop).pack(side=tk.LEFT, padx=5)
-        self.create_button(control_frame, "⚖ REBALANCE", WARNING_COLOR, self.safe_rebalance).pack(side=tk.LEFT, padx=5)
+        self.start_btn = self.create_button(control_frame, "▶ START", ACCENT_COLOR, self.safe_start)
+        self.start_btn.pack(side=tk.LEFT, padx=5)
+        
+        self.stop_btn = self.create_button(control_frame, "⏹ STOP", DANGER_COLOR, self.safe_stop)
+        self.stop_btn.pack(side=tk.LEFT, padx=5)
+        
+        self.rebalance_btn = self.create_button(control_frame, "⚖ REBALANCE", WARNING_COLOR, self.safe_rebalance)
+        self.rebalance_btn.pack(side=tk.LEFT, padx=5)
+        
         self.create_button(control_frame, "🔄 REINICIAR", SECONDARY_COLOR, self.safe_restart_app).pack(side=tk.LEFT, padx=5)  # ← NUEVO BOTÓN
-                # En create_widgets(), después de crear los botones:
+        
+        # En create_widgets(), después de crear los botones:
         if self.bot is None:
             self.start_btn.config(state='disabled', bg='gray')
             self.stop_btn.config(state='disabled', bg='gray') 
             self.rebalance_btn.config(state='disabled', bg='gray')
         
-        # Selector de timeframe
+        # Selector de timeframe - CORREGIDO con estilo oscuro
         tk.Label(control_frame, text="TIMEFRAME:", bg=DARK_BG, fg=TEXT_SECONDARY, 
                 font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=(20,5))
         self.tf_var = tk.StringVar(value="1h")
         tf_combo = ttk.Combobox(control_frame, textvariable=self.tf_var, 
-                               values=["15m", "30m", "1h", "2h", "4h", "1D"], 
-                               width=8, state="readonly", font=("Arial", 10))
+                            values=["15m", "30m", "1h", "2h", "4h", "1D"], 
+                            width=8, state="readonly", font=("Arial", 10),
+                            style='Dark.TCombobox')  # Aplicar estilo oscuro
+
         tf_combo.pack(side=tk.LEFT)
 
         # Contenedor principal
@@ -555,18 +591,47 @@ class ModernTradingGUI:
                     f"{asset['percentage']:.1f}%"
                 ))
         
-        # Actualizar gráfico de torta
+        # Actualizar gráfico de torta - CORREGIDO con colores más saturados y texto blanco
         self.portfolio_ax.clear()
         
         assets = [a for a in portfolio_data['assets'] if a['usd_value'] > total_balance * 0.01]  # > 1% del total
         if assets:
             labels = [a['asset'] for a in assets]
             sizes = [a['usd_value'] for a in assets]
-            colors = plt.cm.Set3(np.linspace(0, 1, len(assets)))
             
-            self.portfolio_ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%',
-                                startangle=90, textprops={'color': 'white', 'fontsize': 8})
-            self.portfolio_ax.set_title('Distribución de Cartera', color='white', fontsize=12)
+            # Colores más saturados y oscuros - paleta mejorada
+            saturated_colors = [
+                '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', 
+                '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
+                '#F8C471', '#82E0AA', '#F1948A', '#85C1E9', '#D7BDE2'
+            ]
+            
+            # Asegurar que tenemos suficientes colores
+            colors = saturated_colors * (len(assets) // len(saturated_colors) + 1)
+            colors = colors[:len(assets)]
+            
+            # Gráfico de torta con texto en BLANCO y colores saturados
+            wedges, texts, autotexts = self.portfolio_ax.pie(
+                sizes, 
+                labels=labels, 
+                colors=colors, 
+                autopct='%1.1f%%',
+                startangle=90, 
+                textprops={'color': 'white', 'fontsize': 8, 'weight': 'bold'},
+                wedgeprops={'edgecolor': 'white', 'linewidth': 0.5}
+            )
+            
+            # Configurar el color de los textos de porcentaje a BLANCO
+            for autotext in autotexts:
+                autotext.set_color('black')
+                autotext.set_weight('bold')
+            
+            # Configurar el color de las etiquetas a BLANCO
+            for text in texts:
+                text.set_color('white')
+                text.set_weight('bold')
+            
+            self.portfolio_ax.set_title('Distribución de Cartera', color='white', fontsize=12, weight='bold')
         
         self.portfolio_canvas.draw()
 
