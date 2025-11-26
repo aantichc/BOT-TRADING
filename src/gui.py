@@ -798,21 +798,6 @@ class ModernTradingGUI:
         
         return card
 
-    def get_oo_value(self, symbol, timeframe):
-        """Obtiene el valor numérico del indicador OO para un símbolo y timeframe"""
-        try:
-            df = self.bot.indicators.get_klines(symbol, timeframe)
-            if df.empty:
-                return 0.0
-            
-            # Calcular indicador OO y obtener el valor numérico
-            color, oo_value = self.bot.indicators.calculate_oo(df)
-            return oo_value
-            
-        except Exception as e:
-            print(f"Error obteniendo valor OO para {symbol} {timeframe}: {e}")
-            return 0.0
-
     def calculate_all_tokens_daily_change(self):
         """Calcula cambios diarios para todos los tokens de una vez (más eficiente)"""
         try:
@@ -1072,9 +1057,6 @@ class ModernTradingGUI:
             'change_1w': self.calculate_period_change(days=7),
             'change_1m': self.calculate_period_change(days=30),
             'change_1y': self.calculate_period_change(days=365),
-            'total_fees': self.calculate_total_fees(),
-            'token_performance': self.calculate_all_tokens_performance(),
-            'timeframe_performance': self.calculate_timeframe_performance()
         }
 
     def calculate_period_change(self, hours=0, minutes=0, days=0):
@@ -1110,59 +1092,6 @@ class ModernTradingGUI:
         sign = "+" if change >= 0 else ""
         return f"{sign}{change:.2f}%"
 
-    def calculate_total_fees(self):
-        """Calcula comisiones basadas en volumen REAL tradeado - ACTUALIZACIÓN CADA HORA"""
-        try:
-            # Cachear para no saturar la API - ACTUALIZAR CADA HORA
-            current_time = datetime.now()
-            if hasattr(self, '_last_fee_calc') and \
-            (current_time - self._last_fee_calc).total_seconds() < 3600:  # 1 hora cache
-                return getattr(self, '_cached_fees', "$0.00")
-            
-            print("🔄 Calculando comisiones precisas (actualización horaria)...")
-            
-            total_volume = 0.0
-            trade_count = 0
-            
-            # Obtener trades de los últimos 90 días para TODOS los símbolos
-            start_time = int((current_time - timedelta(days=90)).timestamp() * 1000)
-            
-            for symbol in self.token_frames.keys():
-                try:
-                    trades = self.bot.client.get_my_trades(
-                        symbol=symbol, 
-                        startTime=start_time,
-                        limit=1000  # Máximo permitido por Binance
-                    )
-                    
-                    for trade in trades:
-                        quote_qty = float(trade['quoteQty'])
-                        total_volume += quote_qty
-                        trade_count += 1
-                        
-                except Exception as e:
-                    # Algunos símbolos pueden no tener historial o dar error
-                    continue
-            
-            # Calcular comisiones (0.085% promedio - conservador)
-            fee_rate = 0.00085
-            estimated_fees = total_volume * fee_rate
-            
-            # Cachear resultados
-            self._cached_fees = f"${estimated_fees:.2f}"
-            self._last_fee_calc = current_time
-            
-            # Log informativo (solo en primera ejecución o cambios significativos)
-            if not hasattr(self, '_first_fee_calc'):
-                self._first_fee_calc = True
-                print(f"💰 Comisiones calculadas: {trade_count} trades, ${total_volume:,.2f} volumen → ${estimated_fees:.2f} fees")
-            
-            return self._cached_fees
-            
-        except Exception as e:
-            print(f"❌ Error calculando comisiones precisas: {e}")
-            return "$0.00"
-
     def get_real_fee_rates(self):
         """Obtiene las tarifas REALES de comisión de tu cuenta Binance - CORREGIDO"""
         try:
@@ -1194,10 +1123,10 @@ class ModernTradingGUI:
         """Calcula comisiones por período - CON TARIFAS REALES"""
         try:
             current_time = datetime.now()
-            
+
             if hasattr(self, '_last_fees_calc') and \
             (current_time - self._last_fees_calc).total_seconds() < 3600:
-                return getattr(self, '_cached_fees_period', self.get_empty_fees())
+                return getattr(self, '_cached_fees_period', self.get_empty_fees())            
             
             print("🔄 Calculando comisiones con tarifas reales...")
             
@@ -1352,56 +1281,6 @@ class ModernTradingGUI:
         except:
             return "+0.00%"
 
-    def calculate_all_tokens_performance(self):
-        """Calcula rendimiento de todos los tokens"""
-        performance = {}
-        for symbol in self.token_frames.keys():
-            try:
-                price = self.bot.account.get_current_price(symbol)
-                performance[symbol] = self.calculate_token_performance(symbol, price)
-            except:
-                performance[symbol] = "+0.00%"
-        return performance
-
-    def calculate_timeframe_performance(self):
-        """Calcula efectividad de cada timeframe para señales"""
-        # Placeholder - en implementación real llevarías estadísticas
-        return {
-            '30m': "+2.15%",
-            '1h': "+3.42%", 
-            '2h': "+1.87%"
-        }
-
-    def save_performance_data(self, symbol_data, performance_data):
-        """Guarda datos de rendimiento para análisis futuro"""
-        try:
-            performance_file = "performance_data.json"
-            data_to_save = {
-                'timestamp': datetime.now().isoformat(),
-                'total_balance': performance_data['change_24h'].strip('+%'),
-                'token_performance': performance_data['token_performance'],
-                'timeframe_performance': performance_data['timeframe_performance']
-            }
-            
-            # Cargar historial existente
-            if os.path.exists(performance_file):
-                with open(performance_file, "r") as f:
-                    existing_data = json.load(f)
-            else:
-                existing_data = []
-            
-            # Agregar nuevo punto (limitar a 1000 puntos)
-            existing_data.append(data_to_save)
-            if len(existing_data) > 1000:
-                existing_data = existing_data[-1000:]
-            
-            # Guardar
-            with open(performance_file, "w") as f:
-                json.dump(existing_data, f)
-                
-        except Exception as e:
-            print(f"Error guardando datos de rendimiento: {e}")
-
     def get_portfolio_data(self, total_balance):
         """Obtiene datos completos de la cartera"""
         try:
@@ -1445,26 +1324,6 @@ class ModernTradingGUI:
         except Exception as e:
             print(f"Error getting portfolio: {e}")
             return {'total_balance': total_balance, 'assets': []}
-
-    def calculate_daily_change(self):
-        """Calcula el cambio porcentual diario"""
-        if len(self.history) < 2:
-            return "+0.00%"
-        
-        # Encontrar el primer registro de hoy
-        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        today_data = [val for dt, val in self.history if dt >= today_start]
-        
-        if len(today_data) < 2:
-            return "+0.00%"
-        
-        start_value = today_data[0]
-        current_value = today_data[-1]
-        change = ((current_value - start_value) / start_value) * 100
-        
-        color = ACCENT_COLOR if change >= 0 else DANGER_COLOR
-        sign = "+" if change >= 0 else ""
-        return f"{sign}{change:.2f}%"
 
     def _update_history(self, now, total_balance):
         """Historial SIMPLIFICADO - solo 1 punto por minuto"""
@@ -1581,23 +1440,6 @@ class ModernTradingGUI:
             print(f"📈 Muestreo aplicado: {len(filtered)} puntos (step: {step})")
         
         return filtered
-
-    def get_timedelta_from_tf(self, tf):
-        """Timeframes simplificados"""
-        if tf == "1h": return timedelta(hours=24)    # 24 horas
-        elif tf == "1D": return timedelta(days=30)   # 30 días
-        elif tf == "1W": return timedelta(days=365)  # 1 año
-        else: return timedelta(days=30)              # por defecto
-
-    def get_timedelta_from_tf(self, tf):
-        """Convierte timeframe a timedelta"""
-        if tf == "15m": return timedelta(minutes=15)
-        elif tf == "30m": return timedelta(minutes=30)
-        elif tf == "1h": return timedelta(hours=1)
-        elif tf == "2h": return timedelta(hours=2)
-        elif tf == "4h": return timedelta(hours=4)
-        elif tf == "1D": return timedelta(days=1)
-        else: return timedelta(hours=1)
 
     def on_close(self):
         """Maneja el cierre de la aplicación - SALIDA INMEDIATA"""

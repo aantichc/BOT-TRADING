@@ -61,7 +61,8 @@ class CapitalManager:
                     if force_initial_rebalance:
                         signal_change_msg = f"🎯 INITIAL REBALANCE {symbol}: Weight {weight:.2f}"
                     else:
-                        signal_change_msg = self._get_signal_change_message(symbol, signals, old_weight, weight)
+                        direction = "📈" if weight > old_weight else "📉"
+                        signal_change_msg = f"{symbol}: {direction} {old_weight:.2f} → {weight:.2f}"
                     
                     actions.append(signal_change_msg)
                     if self.gui:
@@ -129,33 +130,6 @@ class CapitalManager:
         
         return actions if actions else "No ajustes necesarios"
 
-    def _get_signal_change_message(self, symbol, signals, old_weight, new_weight):
-        """Genera mensaje de cambio de señal - MÁS CLARO"""
-        # Determinar señal anterior y nueva
-        old_signal = self._weight_to_signal(old_weight)
-        new_signal = self._weight_to_signal(new_weight)
-        
-        # Obtener timeframes con cambios
-        timeframe_changes = []
-        for tf in signals:
-            signal_char = "🟢" if signals[tf] == "GREEN" else "🟡" if signals[tf] == "YELLOW" else "🔴"
-            timeframe_changes.append(f"{tf}{signal_char}")
-        
-        timeframes_str = " ".join(timeframe_changes)
-        
-        # Mensaje más claro
-        if new_weight > old_weight:
-            direction = "📈"
-            color_indicator = "🟢"
-        elif new_weight < old_weight:
-            direction = "📉" 
-            color_indicator = "🔴"
-        else:
-            return ""  # No loggear si no hay cambio real
-        
-        return f"{symbol}: {direction} {old_weight:.2f} → {new_weight:.2f}"
-
-    def _weight_to_signal(self, weight):
         """Convierte peso numérico a texto de señal"""
         if weight >= 0.8:
             return "STRONG_BUY"
