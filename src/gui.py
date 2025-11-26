@@ -459,7 +459,7 @@ class ModernTradingGUI:
         header.pack(fill=tk.X, padx=20, pady=10)
         header.pack_propagate(False)
         
-        tk.Label(header, text="🚀 CRYPTO TRADING BOT", 
+        tk.Label(header, text="🚀 CRYPTO TRADING BOT - by Alan Antich", 
                 bg=DARK_BG, fg=ACCENT_COLOR, font=("Arial", 24, "bold")).pack(side=tk.LEFT)
         
         # Botones de control
@@ -475,7 +475,7 @@ class ModernTradingGUI:
         self.rebalance_btn = self.create_button(control_frame, "⚖ REBALANCE", WARNING_COLOR, self.safe_rebalance)
         self.rebalance_btn.pack(side=tk.LEFT, padx=5)
         
-        self.create_button(control_frame, "🔄 REINICIAR", SECONDARY_COLOR, self.safe_restart_app).pack(side=tk.LEFT, padx=5)  # ← NUEVO BOTÓN
+        self.create_button(control_frame, "🔄 RESTART", SECONDARY_COLOR, self.safe_restart_app).pack(side=tk.LEFT, padx=5)  # ← NUEVO BOTÓN
         
         # En create_widgets(), después de crear los botones:
         if self.bot is None:
@@ -507,14 +507,14 @@ class ModernTradingGUI:
         metrics_frame.pack(side=tk.LEFT, fill=tk.Y)
 
         self.total_balance_label = self.create_metric_card(
-            metrics_frame, "💰 BALANCE TOTAL", "$0.00", ACCENT_COLOR
+            metrics_frame, "💰 TOTAL BALANCE", "$0.00", ACCENT_COLOR
         )
 
         # CONTENEDOR COMPACTO PARA PERFORMANCE CAPITAL
         capital_container = tk.Frame(metrics_frame, bg=DARK_BG)
         capital_container.pack(fill=tk.X, pady=(0, 10))
 
-        tk.Label(capital_container, text="📈 PERFORMANCE CAPITAL", bg=DARK_BG, fg=TEXT_SECONDARY,
+        tk.Label(capital_container, text="📈 PERFORMANCE", bg=DARK_BG, fg=TEXT_SECONDARY,
                 font=("Arial", 9, "bold")).pack(anchor="w", pady=(0, 5))
 
         # Fila 1: Performance capital corto
@@ -539,7 +539,7 @@ class ModernTradingGUI:
         fees_container = tk.Frame(metrics_frame, bg=DARK_BG)
         fees_container.pack(fill=tk.X, pady=(0, 10))
 
-        tk.Label(fees_container, text="💸 COMISIONES PAGADAS", bg=DARK_BG, fg=TEXT_SECONDARY,
+        tk.Label(fees_container, text="💸 ESTIMATED BINANCE FEES", bg=DARK_BG, fg=TEXT_SECONDARY,
                 font=("Arial", 9, "bold")).pack(anchor="w", pady=(0, 5))
 
         # Fila única: Comisiones por período
@@ -555,7 +555,7 @@ class ModernTradingGUI:
         chart_frame = tk.Frame(top_row, bg=DARK_BG)
         chart_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(20, 0))
 
-        tk.Label(chart_frame, text="📈 EVOLUCIÓN DE CAPITAL", bg=DARK_BG, fg=TEXT_COLOR,
+        tk.Label(chart_frame, text="📈 BALANCE GRAPH", bg=DARK_BG, fg=TEXT_COLOR,
                 font=("Arial", 12, "bold")).pack(anchor="w")
         
         self.fig = Figure(figsize=(10, 4), facecolor=DARK_BG)
@@ -572,7 +572,7 @@ class ModernTradingGUI:
         tokens_frame = tk.Frame(bottom_row, bg=DARK_BG)
         tokens_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        tk.Label(tokens_frame, text="🎯 SEÑALES DE TRADING", bg=DARK_BG, fg=TEXT_COLOR,
+        tk.Label(tokens_frame, text="🎯 TRADING SIGNALS", bg=DARK_BG, fg=TEXT_COLOR,
                 font=("Arial", 12, "bold")).pack(anchor="w")
 
         # Contenedor para tokens en grid (3 columnas)
@@ -587,7 +587,7 @@ class ModernTradingGUI:
         portfolio_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(20, 0))
         portfolio_frame.pack_propagate(False)
 
-        tk.Label(portfolio_frame, text="💼 CARTERA BINANCE", bg=DARK_BG, fg=TEXT_COLOR,
+        tk.Label(portfolio_frame, text="💼 BINANCE WALLET", bg=DARK_BG, fg=TEXT_COLOR,
                 font=("Arial", 12, "bold")).pack(anchor="w")
 
         # Gráfico de cartera
@@ -600,8 +600,8 @@ class ModernTradingGUI:
         # Lista de activos
         self.portfolio_tree = ttk.Treeview(portfolio_frame, columns=('Asset', 'Balance', 'USD', '%'), 
                                           show='headings', height=8)
-        self.portfolio_tree.heading('Asset', text='ACTIVO')
-        self.portfolio_tree.heading('Balance', text='BALANCE')
+        self.portfolio_tree.heading('Asset', text='SYMBOL')
+        self.portfolio_tree.heading('Balance', text='AMMOUNT')
         self.portfolio_tree.heading('USD', text='USD')
         self.portfolio_tree.heading('%', text='%')
         
@@ -617,7 +617,7 @@ class ModernTradingGUI:
         log_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(20, 0))
         log_frame.pack_propagate(False)
 
-        tk.Label(log_frame, text="📋 LOGS DE TRADING", bg=DARK_BG, fg=TEXT_COLOR,
+        tk.Label(log_frame, text="📋 LOGS", bg=DARK_BG, fg=TEXT_COLOR,
                 font=("Arial", 12, "bold")).pack(anchor="w")
 
         self.log_text = tk.Text(log_frame, height=15, bg=CARD_BG, fg=TEXT_COLOR, 
@@ -1477,8 +1477,6 @@ class ModernTradingGUI:
             else:
                 self.ax.plot(times, values, color=ACCENT_COLOR, linewidth=3)
 
-            self.ax.set_title(f"Evolución del Capital - ${total_balance:,.2f}", 
-                            color=TEXT_COLOR, fontsize=14, pad=20)
             self.ax.set_facecolor(CARD_BG)
             self.ax.grid(True, alpha=0.3, color=TEXT_SECONDARY)
             self.ax.tick_params(colors=TEXT_SECONDARY)
@@ -1641,8 +1639,6 @@ class ModernTradingGUI:
             for text in texts:
                 text.set_color('white')
                 text.set_weight('bold')
-            
-            self.portfolio_ax.set_title('Distribución de Cartera', color='white', fontsize=12, weight='bold')
         
         self.portfolio_canvas.draw()
 
