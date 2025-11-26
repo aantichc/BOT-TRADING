@@ -725,11 +725,6 @@ class ModernTradingGUI:
         self.metrics_indicator.pack(side=tk.LEFT, padx=5, pady=5)
         self.section_indicators['metrics'] = self.metrics_indicator
 
-        # ✅ DEBUG LABEL - ASEGURAR VISIBILIDAD
-        self.metrics_debug_label = tk.Label(metrics_header, text="[GRIS]", fg=TEXT_SECONDARY,
-                                        bg=DARK_BG, font=("Arial", 9, "bold"))  # ✅ Texto en negrita
-        self.metrics_debug_label.pack(side=tk.LEFT, padx=2, pady=5)
-
         self.total_balance_label = self.create_metric_card(
             metrics_frame, "💰 TOTAL BALANCE", "$0.00", ACCENT_COLOR
         )
@@ -792,11 +787,6 @@ class ModernTradingGUI:
                                     font=("Arial", 16), bg=DARK_BG, cursor="hand2")  # ✅ Tamaño aumentado
         self.chart_indicator.pack(side=tk.LEFT, padx=5, pady=5)
         self.section_indicators['chart'] = self.chart_indicator
-
-        # ✅ DEBUG LABEL - ASEGURAR VISIBILIDAD
-        self.chart_debug_label = tk.Label(chart_header, text="[GRIS]", fg=TEXT_SECONDARY,
-                                        bg=DARK_BG, font=("Arial", 9, "bold"))  # ✅ Texto en negrita
-        self.chart_debug_label.pack(side=tk.LEFT, padx=2, pady=5)
         
         self.fig = Figure(figsize=(10, 4), facecolor=DARK_BG)
         self.ax = self.fig.add_subplot(111)
@@ -826,10 +816,6 @@ class ModernTradingGUI:
         self.tokens_indicator.pack(side=tk.LEFT, padx=5, pady=5)
         self.section_indicators['tokens'] = self.tokens_indicator
 
-        # ✅ DEBUG LABEL - ASEGURAR VISIBILIDAD
-        self.tokens_debug_label = tk.Label(tokens_header, text="[GRIS]", fg=TEXT_SECONDARY,
-                                        bg=DARK_BG, font=("Arial", 9, "bold"))  # ✅ Texto en negrita
-        self.tokens_debug_label.pack(side=tk.LEFT, padx=2, pady=5)
 
         # Contenedor para tokens en grid (3 columnas)
         self.tokens_container = tk.Frame(tokens_frame, bg=DARK_BG)
@@ -857,10 +843,6 @@ class ModernTradingGUI:
         self.portfolio_indicator.pack(side=tk.LEFT, padx=5, pady=5)
         self.section_indicators['portfolio'] = self.portfolio_indicator
 
-        # ✅ DEBUG LABEL - ASEGURAR VISIBILIDAD
-        self.portfolio_debug_label = tk.Label(portfolio_header, text="[GRIS]", fg=TEXT_SECONDARY,
-                                            bg=DARK_BG, font=("Arial", 9, "bold"))  # ✅ Texto en negrita
-        self.portfolio_debug_label.pack(side=tk.LEFT, padx=2, pady=5)
 
         # Gráfico de cartera
         self.portfolio_fig = Figure(figsize=(4, 2.8), facecolor=DARK_BG)
@@ -987,70 +969,32 @@ class ModernTradingGUI:
         return False
 
     def _activate_indicator_simple(self, section_name):
-        """✅ ACTIVAR INDICADOR - VERSIÓN QUE SÍ FUNCIONA"""
-        print(f"🎯 _activate_indicator_simple EJECUTADO para: {section_name}")
-        print(f"   Estado: closing={self.closing}")
-        
+        """✅ ACTIVAR INDICADOR - SOLO PUNTO SIN TEXTO"""
         if self.closing:
-            print("   ❌ No se ejecuta porque closing=True")
             return
             
         indicator = self.section_indicators.get(section_name)
-        debug_label = getattr(self, f"{section_name}_debug_label", None)
-        
-        print(f"   Indicador encontrado: {indicator is not None}")
-        print(f"   Debug label encontrado: {debug_label is not None}")
         
         if indicator:
-            print(f"   🎨 Cambiando color de {section_name} a VERDE")
-            
-            # ✅ CAMBIO DE COLOR CON DEBUG
-            old_color = indicator.cget('fg')
-            print(f"   Color anterior: {old_color}")
-            
             indicator.config(fg=ACCENT_COLOR)
-            new_color = indicator.cget('fg')
-            print(f"   Color nuevo: {new_color}")
             
-            if debug_label:
-                old_debug_text = debug_label.cget('text')
-                debug_label.config(text="[VERDE]", fg=ACCENT_COLOR)
-                new_debug_text = debug_label.cget('text')
-                print(f"   Debug: '{old_debug_text}' -> '{new_debug_text}'")
-            
-            # ✅ ACTUALIZAR TIMESTAMP
+            # ✅ ACTUALIZAR TIMESTAMP (opcional, para tooltips)
             current_time = datetime.now().strftime("%H:%M:%S")
             self.last_update_times[section_name] = current_time
-            print(f"   Timestamp actualizado: {current_time}")
             
             # ✅ PROGRAMAR RESET
-            print(f"   Programando reset para {section_name} en 2 segundos")
             self.root.after(2000, self._reset_indicator_simple, section_name)
-        else:
-            print(f"   ❌ Indicador no encontrado para: {section_name}")
-
+    
     def _reset_indicator_simple(self, section_name):
         """✅ RESETEAR INDICADOR - VERSIÓN QUE SÍ FUNCIONA"""
-        print(f"🎯 _reset_indicator_simple EJECUTADO para: {section_name}")
         
         if self.closing:
             return
             
         indicator = self.section_indicators.get(section_name)
-        debug_label = getattr(self, f"{section_name}_debug_label", None)
         
         if indicator:
-            print(f"   🎨 Reseteando {section_name} a GRIS")
-            old_color = indicator.cget('fg')
             indicator.config(fg=TEXT_SECONDARY)
-            new_color = indicator.cget('fg')
-            print(f"   Color: '{old_color}' -> '{new_color}'")
-            
-        if debug_label:
-            old_text = debug_label.cget('text')
-            debug_label.config(text="[GRIS]", fg=TEXT_SECONDARY)
-            new_text = debug_label.cget('text')
-            print(f"   Debug: '{old_text}' -> '{new_text}'")
 
     def _on_timeframe_change(self, event=None):
         """Actualizar gráfico cuando cambia el timeframe"""
@@ -2246,7 +2190,7 @@ class ModernTradingGUI:
             os._exit(1)
 
     def _update_portfolio_ui(self, portfolio_data):
-        """✅ CARTERA MEJORADA - MANEJA DATOS VACÍOS"""
+        """✅ CARTERA MEJORADA - COLORES ÚNICOS PARA CADA ASSET"""
         if self.closing:
             return
             
@@ -2255,14 +2199,11 @@ class ModernTradingGUI:
             for item in self.portfolio_tree.get_children():
                 self.portfolio_tree.delete(item)
             
-            # ✅ SI NO HAY DATOS, MOSTRAR MENSAJE
             if not portfolio_data.get('assets'):
                 self.portfolio_tree.insert('', 'end', values=(
                     "Cargando...", "---", "---", "---"
                 ))
-                print("📋 Portfolio: Mostrando datos de carga...")
             else:
-                # Agregar datos reales
                 total_balance = portfolio_data['total_balance']
                 for asset in portfolio_data['assets']:
                     if asset['usd_value'] > 1:
@@ -2272,9 +2213,8 @@ class ModernTradingGUI:
                             f"${asset['usd_value']:,.2f}",
                             f"{asset['percentage']:.1f}%"
                         ))
-                print(f"📋 Portfolio actualizado: {len(portfolio_data['assets'])} activos")
             
-            # ✅ ACTUALIZAR GRÁFICO DE TORTA SI HAY DATOS
+            # ✅ ACTUALIZAR GRÁFICO DE TORTA CON COLORES ÚNICOS
             self.portfolio_ax.clear()
             
             assets = [a for a in portfolio_data.get('assets', []) if a['usd_value'] > total_balance * 0.01]
@@ -2282,8 +2222,16 @@ class ModernTradingGUI:
                 labels = [a['asset'] for a in assets]
                 sizes = [a['usd_value'] for a in assets]
                 
-                colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
-                colors = colors[:len(assets)]
+                # ✅ PALETA DE COLORES MÁS GRANDE Y ÚNICA
+                expanded_colors = [
+                    '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
+                    '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
+                    '#F8C471', '#82E0AA', '#F1948A', '#85C1E9', '#D7BDE2',
+                    '#F9E79F', '#AED6F1', '#A3E4D7', '#FAD7A0', '#D2B4DE'
+                ]
+                
+                # ✅ USAR COLORES ÚNICOS - tomar solo los necesarios
+                colors = expanded_colors[:len(assets)]
                 
                 wedges, texts, autotexts = self.portfolio_ax.pie(
                     sizes, labels=labels, colors=colors, autopct='%1.1f%%',
@@ -2294,14 +2242,13 @@ class ModernTradingGUI:
                     autotext.set_color('black')
                     autotext.set_weight('bold')
             else:
-                # ✅ GRÁFICO DE TORTA VACÍO
                 self.portfolio_ax.text(0.5, 0.5, 'Cargando...', 
                                     horizontalalignment='center', verticalalignment='center',
                                     transform=self.portfolio_ax.transAxes, color=TEXT_COLOR, fontsize=10)
             
             self.portfolio_ax.set_facecolor(CARD_BG)
             self.portfolio_canvas.draw()
-            print("✅ Gráfico de portfolio actualizado")
+            print("✅ Gráfico de portfolio actualizado con colores únicos")
             
         except Exception as e:
             print(f"❌ Error actualizando portfolio UI: {e}")
