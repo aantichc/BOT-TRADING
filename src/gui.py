@@ -976,14 +976,14 @@ class ModernTradingGUI:
         indicator = self.section_indicators.get(section_name)
         
         if indicator:
-            indicator.config(fg=ACCENT_COLOR)
+            indicator.config(fg=WARNING_COLOR)
             
             # ✅ ACTUALIZAR TIMESTAMP (opcional, para tooltips)
             current_time = datetime.now().strftime("%H:%M:%S")
             self.last_update_times[section_name] = current_time
             
             # ✅ PROGRAMAR RESET
-            self.root.after(2000, self._reset_indicator_simple, section_name)
+            self.root.after(5000, self._reset_indicator_simple, section_name)
     
     def _reset_indicator_simple(self, section_name):
         """✅ RESETEAR INDICADOR - VERSIÓN QUE SÍ FUNCIONA"""
