@@ -177,8 +177,12 @@ class ModernTradingGUI:
 
     def _update_token_ui(self, symbol_data):
         """Actualiza la UI de tokens con símbolo + %24H + precio en misma línea"""
+            # ✅ VERIFICACIÓN DE SEGURIDAD
+        if self.closing or not hasattr(self, 'token_frames'):
+            return
+
         for symbol, data in symbol_data.items():
-            if symbol in self.token_frames:
+            if symbol in self.token_frames and not self.closing:
                 frame_data = self.token_frames[symbol].data
                 try:
                     # Actualizar precio
@@ -1277,37 +1281,53 @@ class ModernTradingGUI:
             return self.get_empty_fees()
 
     def force_token_update(self, symbol):
-        """Actualización inmediata de un token específico"""
-        try:
-            # Obtener datos frescos del token
-            signals = self.bot.manager.get_signals(symbol)
-            weight = self.bot.manager.calculate_weight(signals)
-            price = self.bot.account.get_current_price(symbol)
-            balance = self.bot.account.get_symbol_balance(symbol)
-            usd_value = balance * price
-            total_balance = self.bot.account.get_balance_usdc()
-            pct = (usd_value / total_balance * 100) if total_balance > 0 else 0
+        """Actualización inmediata y SEGURA de un token específico"""
+        if self.closing:
+            return
             
-            # Obtener cambio diario
-            daily_changes = self.calculate_all_tokens_daily_change()
-            daily_change = daily_changes.get(symbol, "+0.00%")
-            
-            # Actualizar UI inmediatamente
-            symbol_data = {
-                symbol: {
-                    'signals': signals,
-                    'weight': weight,
-                    'price': price,
-                    'balance': balance,
-                    'usd': usd_value,
-                    'pct': pct,
-                    'daily_change': daily_change
+        def safe_update():
+            try:
+                # Verificar que no estemos cerrando
+                if self.closing or not hasattr(self, 'bot') or self.bot is None:
+                    return
+                    
+                # Obtener datos frescos del token
+                signals = self.bot.manager.get_signals(symbol)
+                weight = self.bot.manager.calculate_weight(signals)
+                price = self.bot.account.get_current_price(symbol)
+                balance = self.bot.account.get_symbol_balance(symbol)
+                usd_value = balance * price
+                total_balance = self.bot.account.get_balance_usdc()
+                pct = (usd_value / total_balance * 100) if total_balance > 0 else 0
+                
+                # Obtener cambio diario
+                daily_changes = self.calculate_all_tokens_daily_change()
+                daily_change = daily_changes.get(symbol, "+0.00%")
+                
+                # Actualizar UI
+                symbol_data = {
+                    symbol: {
+                        'signals': signals,
+                        'weight': weight,
+                        'price': price,
+                        'balance': balance,
+                        'usd': usd_value,
+                        'pct': pct,
+                        'daily_change': daily_change
+                    }
                 }
-            }
-            self._update_token_ui(symbol_data)
-            
+                self._update_token_ui(symbol_data)
+                
+            except Exception as e:
+                if "main thread is not in main loop" not in str(e):
+                    print(f"Error en actualización inmediata de {symbol}: {e}")
+        
+        # ✅ EJECUTAR EN HILO PRINCIPAL usando after()
+        try:
+            if hasattr(self, 'root') and self.root and not self.closing:
+                self.root.after(0, safe_update)
         except Exception as e:
-            print(f"Error en actualización inmediata de {symbol}: {e}")
+            print(f"Error programando actualización para {symbol}: {e}")
 
     def get_empty_fees(self):
         """Retorna estructura vacía de comisiones"""
