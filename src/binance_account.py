@@ -96,7 +96,7 @@ class BinanceAccount:
             executed_price = float(order['fills'][0]['price']) if order.get('fills') else price
             executed_total = float(order['cummulativeQuoteQty']) if order.get('cummulativeQuoteQty') else usd_amount
             
-            msg = f"🟢 COMPRA {symbol}: {quantity:.6f} a ${executed_price:.4f} = ${executed_total:.2f}"
+            msg = f"🟢 COMPRA {symbol}: {quantity:.2f} a ${executed_price:.4f} = ${executed_total:.4f}"
             if self.gui: 
                 self.gui.log_trade(msg, 'GREEN')
             return True, msg
@@ -135,7 +135,7 @@ class BinanceAccount:
             executed_price = float(order['fills'][0]['price']) if order.get('fills') else price
             executed_total = float(order['cummulativeQuoteQty']) if order.get('cummulativeQuoteQty') else quantity * price
             
-            msg = f"SELL {symbol}:{quantity:.1f} at ${executed_price:.2f}= ${executed_total:.2f}"
+            msg = f"SELL {symbol}:{quantity:.2f} at ${executed_price:.4f}= ${executed_total:.4f}"
             if self.gui: 
                 self.gui.log_trade(msg, 'RED')
             return True, msg
