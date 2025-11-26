@@ -1,6 +1,8 @@
-# main.py - VERSIÓN CORREGIDA CON ORDEN ADECUADO
+# main.py - VERSIÓN COMPLETAMENTE CORREGIDA
 import logging
 import time
+import sys
+import tkinter as tk
 
 logging.basicConfig(level=logging.INFO)
 
@@ -12,58 +14,71 @@ def main():
         from gui import ModernTradingGUI
         
         print("1. Creando GUI...")
-        gui = ModernTradingGUI(None)  # ✅ PRIMERO crear GUI sin bot
+        gui = ModernTradingGUI(None)
         print(f"✅ GUI creada")
         
         print("2. Creando bot...")
-        bot = TradingBot(gui)  # ✅ LUEGO crear bot CON GUI
+        bot = TradingBot(gui)
         print(f"✅ Bot creado con GUI: {bot.gui is not None}")
         
         print("3. Asignando bot a GUI...")
-        gui.bot = bot  # ✅ ASIGNAR referencia bidireccional
+        gui.bot = bot
         print(f"✅ Bot asignado a GUI: {gui.bot is not None}")
         
         print("4. Conectando GUI a componentes del bot...")
-        bot.connect_gui(gui)  # ✅ CONECTAR GUI a account y manager
+        bot.connect_gui(gui)
         print("✅ GUI completamente conectada")
         
-        print("5. Verificando conexiones iniciales...")
-        gui.verify_initial_connection()  # ✅ VERIFICAR que todo está conectado
+        print("5. Configurando controles...")
+        gui.enable_bot_controls()
         
-        print("6. Configurando controles...")
-        gui.enable_bot_controls()  # ✅ HABILITAR botones
-        
-        # ✅ ESPERAR A QUE LA GUI ESTÉ COMPLETAMENTE LISTA
-        print("7. Esperando inicialización completa de GUI...")
-        time.sleep(2)  # ✅ PEQUEÑA PAUSA PARA ESTABILIZAR
-        
-        print("8. Iniciando bot...")
-        bot.start()  # ✅ SOLO AHORA iniciar el bot
+        print("6. Iniciando bot...")
+        bot.start()
         print("✅ Bot iniciado")
         
         # ✅ LOG INICIAL
-        gui.log_trade("🚀 Sistema completamente inicializado y funcionando", 'GREEN')
+        gui.log_trade("🚀 Sistema completamente inicializado", 'GREEN')
         
         print("🎯 Aplicación ejecutándose correctamente...")
         
-        # ✅ LOOP PRINCIPAL MEJORADO
-        try:
-            while True:
-                try:
+        # ✅ LOOP PRINCIPAL ROBUSTO CON MANEJO DE EXCEPCIONES
+        last_update_time = time.time()
+        update_interval = 0.05  # 50ms
+        
+        while True:
+            try:
+                current_time = time.time()
+                
+                # ✅ ACTUALIZAR GUI CADA 50ms
+                if current_time - last_update_time >= update_interval:
                     gui.root.update()
                     gui.process_data_queue()
-                    time.sleep(0.05)
-                except Exception as e:
-                    if "main thread is not in main loop" not in str(e):
-                        print(f"⚠️ Error en update: {e}")
+                    last_update_time = current_time
+                else:
+                    # ✅ PEQUEÑA PAUSA PARA NO SATURAR CPU
+                    time.sleep(0.01)
+                    
+            except tk.TclError as e:
+                if "application has been destroyed" in str(e) or "main thread is not in main loop" in str(e):
+                    print("🔴 GUI cerrada, terminando aplicación...")
+                    break
+                else:
+                    print(f"⚠️ TclError: {e}")
                     time.sleep(0.1)
-        except KeyboardInterrupt:
-            print("\n🛑 Cerrando aplicación...")
-            
+                    
+            except Exception as e:
+                print(f"⚠️ Error en loop principal: {e}")
+                time.sleep(0.1)
+                
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Error crítico: {e}")
         import traceback
         traceback.print_exc()
     finally:
+        print("🔴 Cerrando aplicación...")
         if 'bot' in locals():
             bot.stop_completely()
+        sys.exit(0)
+
+if __name__ == "__main__":
+    main()

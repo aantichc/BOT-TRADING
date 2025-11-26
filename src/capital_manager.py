@@ -13,12 +13,25 @@ class CapitalManager:
         self.first_rebalance_done = False  # ✅ NUEVO FLAG PARA PRIMER REBALANCE
     
     def get_signals(self, symbol):
+        """✅ OBTENER SEÑALES CON DEBUG"""
         signals = {}
+        print(f"   📡 Calculando señales OO para {symbol}...")
+        
         for tf_name, tf in TIMEFRAMES.items():
-            df = self.indicators.get_klines(symbol, tf)
-            if not df.empty:
-                color, _ = self.indicators.calculate_oo(df)
-                signals[tf_name] = color
+            try:
+                df = self.indicators.get_klines(symbol, tf)
+                if not df.empty:
+                    color, _ = self.indicators.calculate_oo(df)
+                    signals[tf_name] = color
+                    print(f"      {tf_name}: {color}")
+                else:
+                    signals[tf_name] = "RED"
+                    print(f"      {tf_name}: SIN DATOS → RED")
+            except Exception as e:
+                signals[tf_name] = "RED"
+                print(f"      {tf_name}: ERROR → RED: {e}")
+        
+        print(f"   🎯 Señales finales para {symbol}: {signals}")
         return signals
     
     def calculate_weight(self, signals):

@@ -14,12 +14,8 @@ import numpy as np
 from scipy.interpolate import make_interp_spline
 import subprocess  
 from config import DEFAULT_CHART_TIMEFRAME
-
-# 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 
-# ✅ NUEVAS IMPORTACIONES PARA OPTIMIZACIÓN
 import time
 from concurrent.futures import ThreadPoolExecutor
-# 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 
 
 # Configuración de colores
 DARK_BG = "#0f0f0f"
@@ -76,7 +72,6 @@ class ModernTradingGUI:
         # ✅ CONTADORES PARA FEEDBACK
         self.update_count = 0
         self.tooltip = None
-        # 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 
 
         # Configuración de matplotlib...
         plt.rcParams['figure.facecolor'] = DARK_BG
@@ -92,7 +87,8 @@ class ModernTradingGUI:
         self.setup_window()
         self.setup_styles()
         self.create_widgets()
-        
+        self.root.after(30000, self._simple_health_check) 
+        self.root.after(3000, self._test_indicators_manual)
         self.history = self.load_history()
         self.process_data_queue()
         
@@ -106,6 +102,38 @@ class ModernTradingGUI:
         
         # INICIALIZAR LIMPIEZA PERIÓDICA
         self.root.after(60000, self.setup_memory_cleanup)  # Empezar después de 1 minuto
+
+    def _simple_health_check(self):
+        """✅ VERIFICACIÓN SIMPLE DE SALUD"""
+        if self.closing:
+            return
+            
+        try:
+            print(f"📊 Estado: Cola={self.data_queue.qsize()}, Activos={sum(self.is_updating.values())}")
+        except:
+            pass
+        finally:
+            if not self.closing:
+                self.root.after(30000, self._simple_health_check)
+
+        
+    def _test_indicators_manual(self):
+        """✅ PRUEBA MANUAL DIRECTA DE INDICADORES"""
+        print("🧪 INICIANDO PRUEBA MANUAL DE INDICADORES")
+        
+        # Probar cada indicador manualmente
+        sections = ['tokens', 'metrics', 'portfolio', 'chart']
+        
+        def test_section(index):
+            if index < len(sections):
+                section = sections[index]
+                print(f"🧪 PROBANDO MANUALMENTE: {section}")
+                self.update_section_indicator(section)
+                # Siguiente sección en 3 segundos
+                self.root.after(3000, lambda: test_section(index + 1))
+        
+        # Iniciar prueba
+        test_section(0)
 
     def setup_log_tags(self):
         """Configura los tags de color para el log"""
@@ -172,21 +200,27 @@ class ModernTradingGUI:
             self.root.after(300000, self.cleanup_memory)
 
     def _update_token_ui(self, symbol_data):
-        """Actualiza la UI de tokens de forma SEGURA"""
-        # Esta función ahora siempre se ejecuta en el hilo principal
+        """✅ ACTUALIZAR UI DE TOKENS - CON DEBUG DE SEÑALES"""
         if self.closing or not hasattr(self, 'token_frames'):
             return
             
+        print(f"🎯 Actualizando UI de {len(symbol_data)} tokens...")
+        
         for symbol, data in symbol_data.items():
             if symbol in self.token_frames and not self.closing:
                 frame_data = self.token_frames[symbol].data
                 try:
+                    print(f"   📊 {symbol}:")
+                    print(f"      Precio: ${data['price']:.4f}")
+                    print(f"      Balance: {data['balance']:.6f}")
+                    print(f"      Señales: {data.get('signals', {})}")
+                    print(f"      Peso: {data.get('weight', 0):.2f}")
+                    
                     # Actualizar precio
                     frame_data["price_label"].config(text=f"${data['price']:,.4f}")
                     
-                    # ✅ ACTUALIZAR %24H AL LADO DEL SÍMBOLO (con colores)
+                    # Actualizar %24H
                     daily_change_str = data.get('daily_change', '+0.00%')
-                    
                     if isinstance(daily_change_str, str):
                         change_value_str = daily_change_str.strip('+%')
                         try:
@@ -197,17 +231,16 @@ class ModernTradingGUI:
                         daily_change_value = 0.0
                         daily_change_str = "+0.00%"
                     
-                    # Determinar color del %24H
+                    # Color del %24H
                     if daily_change_value > 0:
-                        change_color = ACCENT_COLOR  # Verde
+                        change_color = ACCENT_COLOR
                     elif daily_change_value < 0:
-                        change_color = DANGER_COLOR  # Rojo
+                        change_color = DANGER_COLOR
                     else:
-                        change_color = TEXT_SECONDARY  # Gris
+                        change_color = TEXT_SECONDARY
                     
-                    # ✅ ACTUALIZAR %24H JUNTO AL SÍMBOLO
                     frame_data["daily_change_header_label"].config(
-                        text=f" {daily_change_str}",  # Espacio antes para separar del símbolo
+                        text=f" {daily_change_str}",
                         fg=change_color
                     )
                     
@@ -216,14 +249,23 @@ class ModernTradingGUI:
                         text=f"{data['balance']:.6f} → ${data['usd']:,.2f} ({data['pct']:.1f}%)"
                     )
                     
-                    # Círculos con señales OO + valores con % cambio
+                    # ✅ ACTUALIZAR CÍRCULOS DE SEÑALES OO
+                    signals = data.get('signals', {})
+                    print(f"      Señales OO para {symbol}: {signals}")
+                    
                     for tf, circle_data in frame_data["circles"].items():
-                        # Color del círculo: señal OO
-                        color = "gray"
-                        if tf in data['signals']:
-                            signal = data['signals'][tf]
-                            color = "#00ff00" if signal == "GREEN" else "#ffff00" if signal == "YELLOW" else "#ff4444"
+                        # Color del círculo basado en señal OO
+                        color = "gray"  # Por defecto
+                        if tf in signals:
+                            signal = signals[tf]
+                            if signal == "GREEN":
+                                color = "#00ff00"
+                            elif signal == "YELLOW":
+                                color = "#ffff00" 
+                            elif signal == "RED":
+                                color = "#ff4444"
                         
+                        print(f"        {tf}: señal={signals.get(tf, 'N/A')}, color={color}")
                         circle_data['canvas'].itemconfig(circle_data['circle_id'], fill=color)
                         
                         # Valor: % cambio de precio
@@ -249,8 +291,8 @@ class ModernTradingGUI:
                             fg=value_color
                         )
                     
-                    # Actualizar peso y señal general (basado en señales OO)
-                    weight = data['weight']
+                    # Actualizar peso y señal general
+                    weight = data.get('weight', 0)
                     if weight >= 0.8:
                         weight_color = "#00ff00"
                         signal_text = "STRONG BUY"
@@ -270,12 +312,12 @@ class ModernTradingGUI:
                     )
                     frame_data["signal_label"].config(
                         text=f"SIGNAL: {signal_text}",
-                        font=("Arial", 9)
+                        fg=weight_color,
+                        font=("Arial", 9, "bold")
                     )
                     
                 except Exception as e:
-                    if "main thread is not in main loop" not in str(e):
-                        print(f"Error updating {symbol} UI: {e}")
+                    print(f"❌ Error actualizando {symbol} UI: {e}")
 
     def get_price_change_percentage(self, symbol, timeframe):
         """Calcula el % de cambio de precio para un timeframe específico"""
@@ -456,6 +498,68 @@ class ModernTradingGUI:
             traceback.print_exc()
             self.log_trade(f"❌ Error en inicialización: {e}", 'RED')    
     
+    def check_tkinter_health(self):
+        """✅ VERIFICAR SALUD DE TKINTER"""
+        try:
+            if not hasattr(self, 'root') or not self.root:
+                return "NO_ROOT"
+                
+            if not hasattr(self.root, 'tk'):
+                return "NO_TK"
+                
+            if not hasattr(self.root, '_windowingsystem'):
+                return "NO_WINDOWING"
+                
+            # Probar una operación simple de Tkinter
+            try:
+                self.root.tk.call('info', 'exists', '.')
+                return "HEALTHY"
+            except:
+                return "TK_CALL_FAILED"
+                
+        except Exception as e:
+            return f"ERROR: {str(e)}"
+
+    def safe_update_ui(self):
+        """✅ ACTUALIZACIÓN PRINCIPAL - CON VERIFICACIÓN DE TKINTER"""
+        # ✅ VERIFICAR SALUD DE TKINTER ANTES DE CONTINUAR
+        tk_health = self.check_tkinter_health()
+        if tk_health != "HEALTHY":
+            print(f"⏸️ Tkinter no saludable: {tk_health}, omitiendo actualización...")
+            return
+            
+        if self.closing:
+            return
+            
+        # ✅ VERIFICACIÓN BÁSICA
+        if not self.bot or not hasattr(self.bot, 'running') or not self.bot.running:
+            if not self.closing:
+                self.root.after(10000, self.safe_update_ui)
+            return
+        
+        current_time = time.time()
+        
+        # ✅ ACTUALIZACIONES CON VERIFICACIÓN DE TKINTER
+        if self._should_update('tokens', current_time):
+            print("🔄 Programando actualización de tokens...")
+            self._schedule_background_task(self._update_tokens_background)
+        
+        if self._should_update('metrics', current_time):
+            print("🔄 Programando actualización de métricas...") 
+            self._schedule_background_task(self._update_metrics_background)
+        
+        if self._should_update('portfolio', current_time):
+            print("🔄 Programando actualización de portfolio...")
+            self._schedule_background_task(self._update_portfolio_background)
+        
+        if self._should_update('chart', current_time):
+            print("🔄 Programando actualización de gráfico...")
+            self._schedule_background_task(self._update_chart_background)
+        
+        # ✅ PROGRAMAR SIGUIENTE CON VERIFICACIÓN
+        if not self.closing and tk_health == "HEALTHY":
+            self.root.after(10000, self.safe_update_ui)
+
     def safe_start_updates(self):
         """Iniciar actualizaciones de forma segura después de que el loop esté activo"""
         print("🔄 Iniciando actualizaciones automáticas...")
@@ -484,6 +588,11 @@ class ModernTradingGUI:
         """Configura estilos personalizados"""
         style = ttk.Style()
         style.theme_use('clam')
+        
+        # ✅ VERIFICAR QUE LOS COLORES ESTÉN BIEN DEFINIDOS
+        print("🎨 Verificando configuración de colores:")
+        print(f"   ACCENT_COLOR: {ACCENT_COLOR}")
+        print(f"   TEXT_SECONDARY: {TEXT_SECONDARY}")
         
         # Configurar colores para ttk widgets
         style.configure('TFrame', background=DARK_BG)
@@ -591,18 +700,24 @@ class ModernTradingGUI:
         metrics_frame = tk.Frame(top_row, bg=DARK_BG)
         metrics_frame.pack(side=tk.LEFT, fill=tk.Y)
 
-        # 🎯 HEADER DE MÉTRICAS CON INDICADOR
-        metrics_header = tk.Frame(metrics_frame, bg=DARK_BG)
+        # 🎯 HEADER DE MÉTRICAS - ASEGURAR VISIBILIDAD
+        metrics_header = tk.Frame(metrics_frame, bg=DARK_BG, height=30)
         metrics_header.pack(fill=tk.X)
+        metrics_header.pack_propagate(False)  # ✅ IMPORTANTE: Mantener tamaño
         
         tk.Label(metrics_header, text="📊 PERFORMANCE METRICS", bg=DARK_BG, fg=TEXT_COLOR,
-                font=("Arial", 12, "bold")).pack(side=tk.LEFT)
+                font=("Arial", 12, "bold")).pack(side=tk.LEFT, pady=5)
         
-        # ✅ INDICADOR DE MÉTRICAS
+        # ✅ INDICADOR - ASEGURAR VISIBILIDAD
         self.metrics_indicator = tk.Label(metrics_header, text="●", fg=TEXT_SECONDARY, 
-                                        font=("Arial", 14), bg=DARK_BG, cursor="hand2")
-        self.metrics_indicator.pack(side=tk.LEFT, padx=5)
+                                        font=("Arial", 16), bg=DARK_BG, cursor="hand2")  # ✅ Tamaño aumentado
+        self.metrics_indicator.pack(side=tk.LEFT, padx=5, pady=5)
         self.section_indicators['metrics'] = self.metrics_indicator
+
+        # ✅ DEBUG LABEL - ASEGURAR VISIBILIDAD
+        self.metrics_debug_label = tk.Label(metrics_header, text="[GRIS]", fg=TEXT_SECONDARY,
+                                        bg=DARK_BG, font=("Arial", 9, "bold"))  # ✅ Texto en negrita
+        self.metrics_debug_label.pack(side=tk.LEFT, padx=2, pady=5)
 
         self.total_balance_label = self.create_metric_card(
             metrics_frame, "💰 TOTAL BALANCE", "$0.00", ACCENT_COLOR
@@ -653,18 +768,24 @@ class ModernTradingGUI:
         chart_frame = tk.Frame(top_row, bg=DARK_BG)
         chart_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(20, 0))
 
-        # 🎯 HEADER DE GRÁFICO CON INDICADOR
-        chart_header = tk.Frame(chart_frame, bg=DARK_BG)
+        # 🎯 HEADER DE GRÁFICO - ASEGURAR VISIBILIDAD
+        chart_header = tk.Frame(chart_frame, bg=DARK_BG, height=30)
         chart_header.pack(fill=tk.X)
+        chart_header.pack_propagate(False)  # ✅ IMPORTANTE: Mantener tamaño
         
         tk.Label(chart_header, text="📈 BALANCE GRAPH", bg=DARK_BG, fg=TEXT_COLOR,
-                font=("Arial", 12, "bold")).pack(side=tk.LEFT)
+                font=("Arial", 12, "bold")).pack(side=tk.LEFT, pady=5)
         
-        # ✅ INDICADOR DE GRÁFICO
+        # ✅ INDICADOR - ASEGURAR VISIBILIDAD
         self.chart_indicator = tk.Label(chart_header, text="●", fg=TEXT_SECONDARY,
-                                    font=("Arial", 14), bg=DARK_BG, cursor="hand2")
-        self.chart_indicator.pack(side=tk.LEFT, padx=5)
+                                    font=("Arial", 16), bg=DARK_BG, cursor="hand2")  # ✅ Tamaño aumentado
+        self.chart_indicator.pack(side=tk.LEFT, padx=5, pady=5)
         self.section_indicators['chart'] = self.chart_indicator
+
+        # ✅ DEBUG LABEL - ASEGURAR VISIBILIDAD
+        self.chart_debug_label = tk.Label(chart_header, text="[GRIS]", fg=TEXT_SECONDARY,
+                                        bg=DARK_BG, font=("Arial", 9, "bold"))  # ✅ Texto en negrita
+        self.chart_debug_label.pack(side=tk.LEFT, padx=2, pady=5)
         
         self.fig = Figure(figsize=(10, 4), facecolor=DARK_BG)
         self.ax = self.fig.add_subplot(111)
@@ -680,18 +801,24 @@ class ModernTradingGUI:
         tokens_frame = tk.Frame(bottom_row, bg=DARK_BG)
         tokens_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # 🎯 HEADER DE TOKENS CON INDICADOR
-        tokens_header = tk.Frame(tokens_frame, bg=DARK_BG)
+        # 🎯 HEADER DE TOKENS - ASEGURAR VISIBILIDAD
+        tokens_header = tk.Frame(tokens_frame, bg=DARK_BG, height=30)
         tokens_header.pack(fill=tk.X)
+        tokens_header.pack_propagate(False)  # ✅ IMPORTANTE: Mantener tamaño
         
         tk.Label(tokens_header, text="🎯 TRADING SIGNALS", bg=DARK_BG, fg=TEXT_COLOR,
-                font=("Arial", 12, "bold")).pack(side=tk.LEFT)
+                font=("Arial", 12, "bold")).pack(side=tk.LEFT, pady=5)
         
-        # ✅ INDICADOR DE TOKENS
+        # ✅ INDICADOR - ASEGURAR VISIBILIDAD
         self.tokens_indicator = tk.Label(tokens_header, text="●", fg=TEXT_SECONDARY, 
-                                    font=("Arial", 14), bg=DARK_BG, cursor="hand2")
-        self.tokens_indicator.pack(side=tk.LEFT, padx=5)
+                                    font=("Arial", 16), bg=DARK_BG, cursor="hand2")  # ✅ Tamaño aumentado
+        self.tokens_indicator.pack(side=tk.LEFT, padx=5, pady=5)
         self.section_indicators['tokens'] = self.tokens_indicator
+
+        # ✅ DEBUG LABEL - ASEGURAR VISIBILIDAD
+        self.tokens_debug_label = tk.Label(tokens_header, text="[GRIS]", fg=TEXT_SECONDARY,
+                                        bg=DARK_BG, font=("Arial", 9, "bold"))  # ✅ Texto en negrita
+        self.tokens_debug_label.pack(side=tk.LEFT, padx=2, pady=5)
 
         # Contenedor para tokens en grid (3 columnas)
         self.tokens_container = tk.Frame(tokens_frame, bg=DARK_BG)
@@ -705,18 +832,24 @@ class ModernTradingGUI:
         portfolio_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(20, 0))
         portfolio_frame.pack_propagate(False)
 
-        # 🎯 HEADER DE CARTERA CON INDICADOR
-        portfolio_header = tk.Frame(portfolio_frame, bg=DARK_BG)
+        # 🎯 HEADER DE CARTERA - ASEGURAR VISIBILIDAD
+        portfolio_header = tk.Frame(portfolio_frame, bg=DARK_BG, height=30)
         portfolio_header.pack(fill=tk.X)
+        portfolio_header.pack_propagate(False)  # ✅ IMPORTANTE: Mantener tamaño
         
         tk.Label(portfolio_header, text="💼 BINANCE WALLET", bg=DARK_BG, fg=TEXT_COLOR,
-                font=("Arial", 12, "bold")).pack(side=tk.LEFT)
+                font=("Arial", 12, "bold")).pack(side=tk.LEFT, pady=5)
         
-        # ✅ INDICADOR DE CARTERA
+        # ✅ INDICADOR - ASEGURAR VISIBILIDAD
         self.portfolio_indicator = tk.Label(portfolio_header, text="●", fg=TEXT_SECONDARY,
-                                        font=("Arial", 14), bg=DARK_BG, cursor="hand2")
-        self.portfolio_indicator.pack(side=tk.LEFT, padx=5)
+                                        font=("Arial", 16), bg=DARK_BG, cursor="hand2")  # ✅ Tamaño aumentado
+        self.portfolio_indicator.pack(side=tk.LEFT, padx=5, pady=5)
         self.section_indicators['portfolio'] = self.portfolio_indicator
+
+        # ✅ DEBUG LABEL - ASEGURAR VISIBILIDAD
+        self.portfolio_debug_label = tk.Label(portfolio_header, text="[GRIS]", fg=TEXT_SECONDARY,
+                                            bg=DARK_BG, font=("Arial", 9, "bold"))  # ✅ Texto en negrita
+        self.portfolio_debug_label.pack(side=tk.LEFT, padx=2, pady=5)
 
         # Gráfico de cartera
         self.portfolio_fig = Figure(figsize=(4, 2.8), facecolor=DARK_BG)
@@ -761,22 +894,34 @@ class ModernTradingGUI:
         self.setup_tooltips()
 
     def setup_tooltips(self):
-        """Configurar tooltips para los indicadores"""
+        """✅ CONFIGURAR TOOLTIPS CON VERIFICACIÓN DE DEBUG LABELS"""
+        print("🔧 Configurando tooltips para indicadores...")
+        
+        # Verificar que todos los indicadores y debug labels existen
+        for section in ['tokens', 'metrics', 'portfolio', 'chart']:
+            indicator = self.section_indicators.get(section)
+            debug_label = getattr(self, f"{section}_debug_label", None)
+            print(f"   ✅ {section}: Indicador={indicator is not None}, DebugLabel={debug_label is not None}")
+        
         # Tooltip para tokens
-        self.tokens_indicator.bind("<Enter>", lambda e: self.show_tooltip(e, 'tokens'))
-        self.tokens_indicator.bind("<Leave>", self.hide_tooltip)
+        if hasattr(self, 'tokens_indicator') and self.tokens_indicator:
+            self.tokens_indicator.bind("<Enter>", lambda e: self.show_tooltip(e, 'tokens'))
+            self.tokens_indicator.bind("<Leave>", self.hide_tooltip)
         
         # Tooltip para cartera
-        self.portfolio_indicator.bind("<Enter>", lambda e: self.show_tooltip(e, 'portfolio'))
-        self.portfolio_indicator.bind("<Leave>", self.hide_tooltip)
+        if hasattr(self, 'portfolio_indicator') and self.portfolio_indicator:
+            self.portfolio_indicator.bind("<Enter>", lambda e: self.show_tooltip(e, 'portfolio'))
+            self.portfolio_indicator.bind("<Leave>", self.hide_tooltip)
         
         # Tooltip para métricas
-        self.metrics_indicator.bind("<Enter>", lambda e: self.show_tooltip(e, 'metrics'))
-        self.metrics_indicator.bind("<Leave>", self.hide_tooltip)
+        if hasattr(self, 'metrics_indicator') and self.metrics_indicator:
+            self.metrics_indicator.bind("<Enter>", lambda e: self.show_tooltip(e, 'metrics'))
+            self.metrics_indicator.bind("<Leave>", self.hide_tooltip)
         
         # Tooltip para gráfico
-        self.chart_indicator.bind("<Enter>", lambda e: self.show_tooltip(e, 'chart'))
-        self.chart_indicator.bind("<Leave>", self.hide_tooltip)
+        if hasattr(self, 'chart_indicator') and self.chart_indicator:
+            self.chart_indicator.bind("<Enter>", lambda e: self.show_tooltip(e, 'chart'))
+            self.chart_indicator.bind("<Leave>", self.hide_tooltip)
 
     def show_tooltip(self, event, section_name):
         """Mostrar tooltip con última actualización"""
@@ -796,23 +941,88 @@ class ModernTradingGUI:
         """Ocultar tooltip"""
         if hasattr(self, 'tooltip'):
             self.tooltip.destroy()
-
+    
     def update_section_indicator(self, section_name):
-        """Animación de indicador de sección"""
-        def blink_indicator():
-            indicator = self.section_indicators.get(section_name)
-            if indicator:
-                # Cambiar a color activo
-                indicator.config(fg=ACCENT_COLOR)
+        """✅ ACTUALIZACIÓN DE INDICADOR - VERSIÓN ROBUSTA"""
+        try:
+            if self.closing or not hasattr(self, 'root') or not self.root:
+                return
                 
-                # Actualizar timestamp
-                current_time = datetime.now().strftime("%H:%M:%S")
-                self.last_update_times[section_name] = current_time
+            # ✅ VERIFICAR QUE TKINTER ESTÉ ACTIVO
+            if hasattr(self.root, 'tk') and hasattr(self.root.tk, 'call'):
+                self.root.after(0, self._activate_indicator_simple, section_name)
+            else:
+                print(f"⚠️ Tkinter no disponible para indicador {section_name}")
                 
-                # Volver al color normal después de 2 segundos
-                self.root.after(2000, lambda: indicator.config(fg=TEXT_SECONDARY))
+        except Exception as e:
+            if "main thread is not in main loop" not in str(e):
+                print(f"❌ Error en update_section_indicator {section_name}: {e}")
+
+    def _activate_indicator_simple(self, section_name):
+        """✅ ACTIVAR INDICADOR - CON DEBUG DETALLADO"""
+        print(f"🎯 _activate_indicator_simple EJECUTADO para: {section_name}")
+        print(f"   Estado: closing={self.closing}")
         
-        self.safe_ui_update(blink_indicator)
+        if self.closing:
+            print("   ❌ No se ejecuta porque closing=True")
+            return
+            
+        indicator = self.section_indicators.get(section_name)
+        debug_label = getattr(self, f"{section_name}_debug_label", None)
+        
+        print(f"   Indicador encontrado: {indicator is not None}")
+        print(f"   Debug label encontrado: {debug_label is not None}")
+        
+        if indicator:
+            print(f"   🎨 Cambiando color de {section_name} a VERDE")
+            
+            # ✅ CAMBIO DE COLOR CON DEBUG
+            old_color = indicator.cget('fg')
+            print(f"   Color anterior: {old_color}")
+            
+            indicator.config(fg=ACCENT_COLOR)
+            new_color = indicator.cget('fg')
+            print(f"   Color nuevo: {new_color}")
+            
+            if debug_label:
+                old_debug_text = debug_label.cget('text')
+                debug_label.config(text="[VERDE]", fg=ACCENT_COLOR)
+                new_debug_text = debug_label.cget('text')
+                print(f"   Debug: '{old_debug_text}' -> '{new_debug_text}'")
+            
+            # ✅ ACTUALIZAR TIMESTAMP
+            current_time = datetime.now().strftime("%H:%M:%S")
+            self.last_update_times[section_name] = current_time
+            print(f"   Timestamp actualizado: {current_time}")
+            
+            # ✅ PROGRAMAR RESET
+            print(f"   Programando reset para {section_name} en 2 segundos")
+            self.root.after(2000, self._reset_indicator_simple, section_name)
+        else:
+            print(f"   ❌ Indicador no encontrado para: {section_name}")
+
+    def _reset_indicator_simple(self, section_name):
+        """✅ RESETEAR INDICADOR - CON DEBUG DETALLADO"""
+        print(f"🎯 _reset_indicator_simple EJECUTADO para: {section_name}")
+        
+        if self.closing:
+            return
+            
+        indicator = self.section_indicators.get(section_name)
+        debug_label = getattr(self, f"{section_name}_debug_label", None)
+        
+        if indicator:
+            print(f"   🎨 Reseteando {section_name} a GRIS")
+            old_color = indicator.cget('fg')
+            indicator.config(fg=TEXT_SECONDARY)
+            new_color = indicator.cget('fg')
+            print(f"   Color: '{old_color}' -> '{new_color}'")
+            
+        if debug_label:
+            old_text = debug_label.cget('text')
+            debug_label.config(text="[GRIS]", fg=TEXT_SECONDARY)
+            new_text = debug_label.cget('text')
+            print(f"   Debug: '{old_text}' -> '{new_text}'")
 
     def _on_timeframe_change(self, event=None):
         """Actualizar gráfico cuando cambia el timeframe"""
@@ -1118,23 +1328,38 @@ class ModernTradingGUI:
             self.root.after(1000, self._perform_restart)
 
     def safe_ui_update(self, func, *args, **kwargs):
-        """Ejecuta una función de UI de forma segura en el hilo principal"""
-        if self.closing or not hasattr(self, 'root') or not self.root:
+        """✅ EJECUTAR FUNCIÓN DE UI - CON DETECCIÓN DE ESTADO DE TKINTER"""
+        # ✅ VERIFICAR ESTADO COMPLETO DE TKINTER
+        if (self.closing or 
+            not hasattr(self, 'root') or 
+            not self.root or 
+            not hasattr(self.root, 'tk') or
+            not hasattr(self.root, '_windowingsystem')):
             return
             
         def safe_wrapper():
-            if not self.closing and hasattr(self, 'root') and self.root:
-                try:
-                    func(*args, **kwargs)
-                except Exception as e:
-                    if "main thread is not in main loop" not in str(e):
-                        print(f"UI update error: {e}")
+            # ✅ VERIFICAR NUEVAMENTE ANTES DE EJECUTAR
+            if (self.closing or 
+                not hasattr(self, 'root') or 
+                not self.root or 
+                not hasattr(self.root, 'tk')):
+                return
+                
+            try:
+                func(*args, **kwargs)
+            except Exception as e:
+                if "main thread is not in main loop" not in str(e) and "application has been destroyed" not in str(e):
+                    print(f"❌ UI update error in {func.__name__}: {e}")
         
         try:
-            self.root.after(0, safe_wrapper)
+            # ✅ VERIFICAR QUE TKINTER ESTÉ ACTIVO
+            if hasattr(self.root, 'tk') and hasattr(self.root.tk, 'call'):
+                self.root.after(0, safe_wrapper)
+            else:
+                print("⚠️ Tkinter no está disponible para safe_ui_update")
         except Exception as e:
             if "main thread is not in main loop" not in str(e):
-                print(f"Error scheduling UI update: {e}")
+                print(f"❌ Error scheduling {func.__name__}: {e}")
 
     def log_trade(self, msg, color="white"):
         """Agrega mensaje al log de forma thread-safe"""
@@ -1208,47 +1433,6 @@ class ModernTradingGUI:
             else:
                 label.config(fg=TEXT_SECONDARY)  # Gris para comisiones bajas
 
-    def safe_update_ui(self):
-        """✅ ACTUALIZACIÓN PRINCIPAL - VERSIÓN SIMPLIFICADA Y ROBUSTA"""
-        if self.closing:
-            return
-            
-        print("🔁 Ejecutando safe_update_ui...")
-        
-        # ✅ VERIFICACIÓN BÁSICA
-        if not self.bot or not hasattr(self.bot, 'running') or not self.bot.running:
-            print("⏸️ Bot no ejecutándose, omitiendo actualización...")
-            if not self.closing:
-                self.root.after(10000, self.safe_update_ui)  # Reintentar en 10s
-            return
-        
-        current_time = time.time()
-        
-        # ✅ ACTUALIZACIONES CON FEEDBACK
-        if self._should_update('tokens', current_time):
-            print("🔄 Programando actualización de tokens...")
-            self.update_section_indicator('tokens')
-            self._schedule_background_task(self._update_tokens_background)
-        
-        if self._should_update('metrics', current_time):
-            print("🔄 Programando actualización de métricas...") 
-            self.update_section_indicator('metrics')
-            self._schedule_background_task(self._update_metrics_background)
-        
-        if self._should_update('portfolio', current_time):
-            print("🔄 Programando actualización de portfolio...")
-            self.update_section_indicator('portfolio')
-            self._schedule_background_task(self._update_portfolio_background)
-        
-        if self._should_update('chart', current_time):
-            print("🔄 Programando actualización de gráfico...")
-            self.update_section_indicator('chart')
-            self._schedule_background_task(self._update_chart_background)
-        
-        # ✅ PROGRAMAR SIGUIENTE
-        if not self.closing:
-            self.root.after(10000, self.safe_update_ui)  # Cada 10 segundos
-
     def _schedule_background_task(self, task_function):
         """Programa una tarea en background de forma segura"""
         def background_wrapper():
@@ -1277,19 +1461,35 @@ class ModernTradingGUI:
         interval = self.update_intervals[update_type]
         
         return (current_time - last_time) >= interval
-    
+
     def _update_tokens_background(self):
-        """✅ ACTUALIZACIÓN OPTIMIZADA DE TOKENS"""
+        """✅ ACTUALIZACIÓN DE TOKENS - PROCESAR TODOS LOS TOKENS"""
+        print("🔄 _update_tokens_background INICIADO")
+        
         if self.closing or not self.bot:
+            print("   ❌ No se ejecuta: closing={self.closing}, bot={self.bot is not None}")
+            return
+            
+        if self.is_updating['tokens']:
+            print("   ⏭️ Actualización de tokens ya en progreso, omitiendo...")
             return
             
         self.is_updating['tokens'] = True
         try:
-            symbol_data = {}
-            daily_changes = self._get_cached_daily_changes()  # ✅ CACHEADO
+            print("🎯 LLAMANDO update_section_indicator('tokens')...")
+            self.update_section_indicator('tokens')
             
-            for symbol in list(self.token_frames.keys())[:8]:  # ✅ LIMITAR
+            symbol_data = {}
+            
+            # ✅ PROCESAR TODOS LOS TOKENS, NO SOLO 3
+            all_symbols = list(self.token_frames.keys())
+            print(f"   🔍 Procesando {len(all_symbols)} tokens: {all_symbols}")
+            
+            for symbol in all_symbols:  # ← CAMBIAR test_symbols por all_symbols
                 try:
+                    print(f"   📊 Obteniendo datos para {symbol}...")
+                    
+                    # ✅ OBTENER SEÑALES OO
                     signals = self.bot.manager.get_signals(symbol)
                     weight = self.bot.manager.calculate_weight(signals)
                     price = self.bot.account.get_current_price(symbol)
@@ -1298,6 +1498,10 @@ class ModernTradingGUI:
                     total_balance = self.bot.account.get_balance_usdc()
                     pct = (usd_value / total_balance * 100) if total_balance > 0 else 0
                     
+                    # Obtener cambio diario
+                    daily_changes = self._get_cached_daily_changes()
+                    daily_change = daily_changes.get(symbol, "+0.00%")
+                    
                     symbol_data[symbol] = {
                         'signals': signals,
                         'weight': weight,
@@ -1305,22 +1509,31 @@ class ModernTradingGUI:
                         'balance': balance,
                         'usd': usd_value,
                         'pct': pct,
-                        'daily_change': daily_changes.get(symbol, "+0.00%")
+                        'daily_change': daily_change
                     }
                     
-                    # ✅ PEQUEÑA PAUSA PARA NO SATURAR LA API
-                    time.sleep(0.1)
+                    print(f"   ✅ {symbol}: precio=${price:.4f}, señales={signals}, peso={weight:.2f}")
                     
                 except Exception as e:
-                    print(f"Error updating {symbol}: {e}")
+                    print(f"   ❌ Error en {symbol}: {e}")
                     continue
 
-            # ✅ ENVIAR AL HILO PRINCIPAL
-            self.data_queue.put(("token_data", symbol_data))
+            # ✅ ENVIAR DATOS AL HILO PRINCIPAL
+            if symbol_data:
+                print(f"   📨 Enviando {len(symbol_data)} tokens a la cola de datos")
+                self.data_queue.put(("token_data", symbol_data))
+                print(f"✅ Tokens procesados: {len(symbol_data)} símbolos con señales")
+            else:
+                print("⚠️ No se pudieron obtener datos de tokens")
             
+        except Exception as e:
+            print(f"❌ Error crítico en _update_tokens_background: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             self.is_updating['tokens'] = False
             self.last_update_time['tokens'] = time.time()
+            print(f"🔄 _update_tokens_background COMPLETADO - is_updating[tokens] = {self.is_updating['tokens']}")
 
     def _update_metrics_background(self):
         """✅ ACTUALIZACIÓN OPTIMIZADA DE MÉTRICAS"""
@@ -1417,73 +1630,94 @@ class ModernTradingGUI:
         return getattr(self, '_cached_fees', self.get_empty_fees())
 
     def process_data_queue(self):
-        """✅ VERSIÓN OPTIMIZADA - LÍMITE DE PROCESAMIENTO"""
+        """✅ PROCESAR COLA DE DATOS - CON VERIFICACIÓN DE TKINTER"""
+        # ✅ VERIFICAR TKINTER ANTES DE PROCESAR
+        tk_health = self.check_tkinter_health()
+        if tk_health != "HEALTHY":
+            return
+            
         try:
             processed = 0
-            MAX_PROCESS = 10  # ✅ LÍMITE MÁXIMO
+            MAX_PROCESS = 5  # ✅ MÁS CONSERVADOR
             
             while processed < MAX_PROCESS:
                 try:
                     item = self.data_queue.get_nowait()
                     processed += 1
                     
+                    # ✅ VERIFICAR TKINTER ANTES DE CADA ACTUALIZACIÓN
+                    if self.check_tkinter_health() != "HEALTHY":
+                        break
+                        
                     if item[0] == "log":
-                        self.safe_ui_update(self._add_log_message, item[1], item[2])
+                        self._add_log_message(item[1], item[2])
                     elif item[0] == "token_data":
-                        self.safe_ui_update(self._update_token_ui, item[1])
+                        self._update_token_ui(item[1])
                     elif item[0] == "metrics":
-                        self.safe_ui_update(self._update_metrics_ui, item[1])
+                        self._update_metrics_ui(item[1])
                     elif item[0] == "portfolio":
-                        self.safe_ui_update(self._update_portfolio_ui, item[1])
+                        self._update_portfolio_ui(item[1])
                     elif item[0] == "chart_update":
-                        self.safe_ui_update(self._update_main_chart, item[1])
+                        self._update_main_chart(item[1])
                         
                 except queue.Empty:
                     break
                     
         except Exception as e:
-            print(f"Error procesando cola: {e}")
+            print(f"❌ Error procesando cola: {e}")
         finally:
-            # ✅ LIMPIAR COLA SI SE LLENA DEMASIADO
-            if self.data_queue.qsize() > 50:
-                self._clean_queue()
-            
-            # ✅ PROGRAMAR SIGUIENTE ACTUALIZACIÓN MÁS INTELIGENTE
-            if not self.closing:
+            # ✅ SOLO PROGRAMAR SIGUIENTE SI TKINTER ESTÁ SALUDABLE
+            if not self.closing and self.check_tkinter_health() == "HEALTHY":
                 self.root.after(100, self.process_data_queue)
 
-    def _clean_queue(self):
-        """✅ LIMPIAR COLA MANTENIENDO LOS DATOS MÁS RECIENTES"""
+    def _clean_queue_aggressive(self):
+        """✅ LIMPIEZA AGRESIVA DE COLA SATURADA"""
         try:
-            # Mantener solo los últimos 20 elementos
-            items = []
-            while self.data_queue.qsize() > 20:
+            print(f"🧹 Limpiando cola saturada: {self.data_queue.qsize()} elementos")
+            
+            # Mantener solo los elementos más recientes de cada tipo
+            recent_items = []
+            seen_types = set()
+            
+            # Recoger elementos en orden inverso (más recientes primero)
+            all_items = []
+            while True:
                 try:
-                    items.append(self.data_queue.get_nowait())
+                    all_items.append(self.data_queue.get_nowait())
                 except queue.Empty:
                     break
             
-            # Re-insertar los más recientes (invertir el orden)
-            for item in items[-10:]:  # Mantener últimos 10
+            # Mantener el más reciente de cada tipo
+            for item in reversed(all_items):
+                item_type = item[0]
+                if item_type not in seen_types:
+                    recent_items.append(item)
+                    seen_types.add(item_type)
+            
+            # Reinsertar los elementos más recientes
+            for item in recent_items:
                 try:
                     self.data_queue.put_nowait(item)
                 except queue.Full:
                     break
                     
-            print(f"🧹 Cola limpiada: {len(items)} elementos removidos")
+            print(f"✅ Cola limpiada: {len(recent_items)} elementos mantenidos")
             
         except Exception as e:
-            print(f"Error limpiando cola: {e}")
+            print(f"❌ Error limpiando cola: {e}")
 
     def on_close(self):
-        """✅ CIERRE OPTIMIZADO"""
+        """✅ CIERRO MEJORADO - MARCAR EXPLÍCITAMENTE COMO CERRANDO"""
         if self.closing:
             return
         
         self.closing = True
-        print("🔴 Cerrando aplicación optimizadamente...")
+        print("🔴 CERRANDO APLICACIÓN - Desactivando todas las actualizaciones...")
         
-        # ✅ DETENER EJECUTOR PRIMERO
+        # ✅ DETENER TODOS LOS HILOS Y ACTUALIZACIONES
+        self.updating = False
+        
+        # ✅ DETENER EJECUTOR
         if hasattr(self, 'update_executor'):
             self.update_executor.shutdown(wait=False)
         
@@ -1498,10 +1732,11 @@ class ModernTradingGUI:
         except:
             pass
         
-        # ✅ CERRAR VENTANA
+        # ✅ CERRAR VENTANA DE FORMA SEGURA
         try:
-            self.root.quit()
-            self.root.destroy()
+            if hasattr(self, 'root') and self.root:
+                self.root.quit()
+                self.root.destroy()
         except:
             pass
         
