@@ -592,7 +592,7 @@ class ModernTradingGUI:
                 font=("Arial", 12, "bold")).pack(anchor="w")
 
         # Gráfico de cartera
-        self.portfolio_fig = Figure(figsize=(4, 2.5), facecolor=DARK_BG)
+        self.portfolio_fig = Figure(figsize=(4, 2.8), facecolor=DARK_BG)
         self.portfolio_ax = self.portfolio_fig.add_subplot(111)
         self.portfolio_ax.set_facecolor(CARD_BG)
         self.portfolio_canvas = FigureCanvasTkAgg(self.portfolio_fig, portfolio_frame)
