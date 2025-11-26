@@ -1528,7 +1528,6 @@ class ModernTradingGUI:
             self.fig.tight_layout()
             
             self.canvas.draw()
-            print(f"📊 Gráfico actualizado: {tf} - {len(filtered)} puntos")
 
         except Exception as e:
             print(f"Error updating main chart: {e}")
@@ -1581,7 +1580,6 @@ class ModernTradingGUI:
             filtered = filtered[::step]
             print(f"📈 Muestreo aplicado: {len(filtered)} puntos (step: {step})")
         
-        print(f"📊 Filtrado {tf}: {len(filtered)} puntos desde {cutoff.strftime('%Y-%m-%d %H:%M')}")
         return filtered
 
     def get_timedelta_from_tf(self, tf):

@@ -10,7 +10,6 @@ class CapitalManager:
         self.base_allocation = 1.0 / len(SYMBOLS)
         self.last_weights = {s: 0.0 for s in SYMBOLS}
         self.SYMBOLS = SYMBOLS
-        self.initialized = False
         self.first_rebalance_done = False  # ✅ NUEVO FLAG PARA PRIMER REBALANCE
     
     def get_signals(self, symbol):
@@ -60,7 +59,7 @@ class CapitalManager:
             if force_initial_rebalance or signal_changed or manual:
                 if (signal_changed and not manual) or force_initial_rebalance:
                     if force_initial_rebalance:
-                        signal_change_msg = f"🎯 REBALANCE INICIAL {symbol}: Peso {weight:.2f}"
+                        signal_change_msg = f"🎯 INITIAL REBALANCE {symbol}: Weight {weight:.2f}"
                     else:
                         signal_change_msg = self._get_signal_change_message(symbol, signals, old_weight, weight)
                     
@@ -120,46 +119,7 @@ class CapitalManager:
                             if self.gui:
                                 self.gui.log_trade(error_msg, 'RED')
         
-        # ✅ MARCAR COMO INICIALIZADO Y PRIMER REBALANCE COMPLETADO
-        if not self.initialized:
-            self.initialized = True
-            initial_summary = self._get_initial_summary()
-            actions.append(initial_summary)
-            if self.gui:
-                self.gui.log_trade(initial_summary)
-        
-        # ✅ MARCAR QUE EL PRIMER REBALANCE SE HA COMPLETADO
-        if not self.first_rebalance_done:
-            self.first_rebalance_done = True
-            completion_msg = "✅ Rebalance inicial completado"
-            actions.append(completion_msg)
-            if self.gui:
-                self.gui.log_trade(completion_msg, 'GREEN')
-        
         return actions if actions else "No ajustes necesarios"
-    
-    def _get_initial_summary(self):
-        """Genera un resumen limpio de las señales iniciales"""
-        summary_lines = ["📊 Starting Signals:"]
-        
-        for symbol in self.SYMBOLS:
-            signals = self.get_signals(symbol)
-            weight = self.calculate_weight(signals)
-            
-            # Convertir señales a emojis
-            signal_emojis = []
-            for tf in ["30m", "1h", "2h"]:
-                if tf in signals:
-                    signal = signals[tf]
-                    emoji = "🟢" if signal == "GREEN" else "🟡" if signal == "YELLOW" else "🔴"
-                    signal_emojis.append(f"{tf}{emoji}")
-            
-            signals_str = " ".join(signal_emojis)
-            signal_text = self._weight_to_signal(weight)
-            
-            summary_lines.append(f" {symbol}: {signal_text} | Weight: {weight:.2f}")
-        
-        return "\n".join(summary_lines)
 
     def _get_signal_change_message(self, symbol, signals, old_weight, new_weight):
         """Genera mensaje de cambio de señal - MÁS CLARO"""
