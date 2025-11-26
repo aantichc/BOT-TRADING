@@ -175,13 +175,40 @@ class ModernTradingGUI:
                 self.root.after(2000, self.process_data_queue)  # 2 segundos
  
     def _update_token_ui(self, symbol_data):
-        """Actualiza la UI de tokens con la nueva estructura"""
+        """Actualiza la UI de tokens con cambio diario - VERSIÓN COMPLETA CORREGIDA"""
         for symbol, data in symbol_data.items():
             if symbol in self.token_frames:
                 frame_data = self.token_frames[symbol].data
                 try:
                     # Actualizar precio
                     frame_data["price_label"].config(text=f"${data['price']:,.4f}")
+                    
+                    # ✅ ACTUALIZAR CAMBIO DIARIO CON COLORES (CORREGIDO)
+                    daily_change_str = data.get('daily_change', '+0.00%')
+                    
+                    # Asegurar que es un string y extraer el valor numérico
+                    if isinstance(daily_change_str, str):
+                        # Remover + y % para obtener el valor numérico
+                        change_value_str = daily_change_str.strip('+%')
+                        try:
+                            daily_change_value = float(change_value_str)
+                        except ValueError:
+                            daily_change_value = 0.0
+                    else:
+                        daily_change_value = 0.0
+                        daily_change_str = "+0.00%"
+                    
+                    if daily_change_value > 0:
+                        change_color = ACCENT_COLOR  # Verde
+                    elif daily_change_value < 0:
+                        change_color = DANGER_COLOR  # Rojo
+                    else:
+                        change_color = TEXT_SECONDARY  # Gris
+                    
+                    frame_data["daily_change_label"].config(
+                        text=f"24H: {daily_change_str}",
+                        fg=change_color
+                    )
                     
                     # Actualizar balance
                     frame_data["balance_label"].config(
@@ -202,16 +229,16 @@ class ModernTradingGUI:
                     weight = data['weight']
                     if weight >= 0.8:
                         weight_color = "#00ff00"
-                        signal_text = "FUERTE COMPRA"
+                        signal_text = "FSTRONG BUY"
                     elif weight >= 0.5:
                         weight_color = "#ffff00"
-                        signal_text = "COMPRA"
+                        signal_text = "BUY"
                     elif weight >= 0.3:
                         weight_color = WARNING_COLOR
-                        signal_text = "NEUTRAL"
+                        signal_text = "SELL"
                     else:
                         weight_color = DANGER_COLOR
-                        signal_text = "VENTA"
+                        signal_text = "STRONG SELL"
                     
                     frame_data["weight_label"].config(
                         text=f"PESO: {weight:.2f}", 
@@ -587,10 +614,10 @@ class ModernTradingGUI:
             self.token_frames[symbol] = card
 
     def create_token_card(self, symbol):
-        """Crea una tarjeta individual de token con mejor distribución"""
+        """Crea una tarjeta individual de token con % cambio diario"""
         card = tk.Frame(self.tokens_container, bg=CARD_BG, relief='flat', bd=1,
                     highlightbackground=TEXT_SECONDARY, highlightthickness=1,
-                    width=280, height=190)
+                    width=280, height=200)  # Aumentamos altura a 200px
         card.pack_propagate(False)
         
         # Header del token
@@ -604,12 +631,20 @@ class ModernTradingGUI:
                             font=("Arial", 12, "bold"))
         price_label.pack(side=tk.RIGHT)
         
+        # ✅ NUEVO: Cambio diario del token
+        daily_change_frame = tk.Frame(card, bg=CARD_BG)
+        daily_change_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
+        
+        daily_change_label = tk.Label(daily_change_frame, text="24H: +0.00%", 
+                                bg=CARD_BG, fg=TEXT_SECONDARY, font=("Arial", 9))
+        daily_change_label.pack(anchor="w")
+        
         # Información de balance
         balance_frame = tk.Frame(card, bg=CARD_BG)
         balance_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
         
         balance_label = tk.Label(balance_frame, text="0.000000 → $0.00 (0.0%)", 
-                            bg=CARD_BG, fg=TEXT_SECONDARY, font=("Arial", 9))
+                                bg=CARD_BG, fg=TEXT_SECONDARY, font=("Arial", 9))
         balance_label.pack(anchor="w")
         
         # CONTENEDOR PARA SEMÁFOROS
@@ -620,7 +655,8 @@ class ModernTradingGUI:
         timeframe_frame = tk.Frame(signals_container, bg=CARD_BG)
         timeframe_frame.pack()
         
-        circles = {}
+        # ✅ DEFINIR circles DENTRO de la función
+        circles = {}  # ← AQUÍ SE DEFINE circles
         timeframes = ["30m", "1h", "2h"]
         
         for i, tf in enumerate(timeframes):
@@ -661,17 +697,47 @@ class ModernTradingGUI:
                             font=("Arial", 10, "bold"))
         signal_label.pack(side=tk.LEFT)
         
-        # Guardar referencias
+        # ✅ Guardar referencias (circles YA está definido)
         card.data = {
             "symbol": symbol,
             "price_label": price_label,
+            "daily_change_label": daily_change_label,  # ← NUEVO
             "balance_label": balance_label,
-            "circles": circles,  # Ahora es un diccionario con canvas y circle_id
+            "circles": circles,  # ← AHORA SÍ ESTÁ DEFINIDO
             "weight_label": weight_label,
             "signal_label": signal_label
         }
         
         return card
+    
+    def calculate_all_tokens_daily_change(self):
+        """Calcula cambios diarios para todos los tokens de una vez (más eficiente)"""
+        try:
+            # Obtener todos los tickers de una sola llamada a la API
+            all_tickers = self.bot.client.get_ticker()
+            
+            daily_changes = {}
+            for ticker in all_tickers:
+                symbol = ticker['symbol']
+                if symbol in self.token_frames:
+                    if 'priceChangePercent' in ticker:
+                        price_change_percent = float(ticker['priceChangePercent'])
+                        sign = "+" if price_change_percent >= 0 else ""
+                        daily_changes[symbol] = f"{sign}{price_change_percent:.2f}%"
+                    else:
+                        daily_changes[symbol] = "+0.00%"
+            
+            # Asegurar que todos los símbolos tengan un valor
+            for symbol in self.token_frames.keys():
+                if symbol not in daily_changes:
+                    daily_changes[symbol] = "+0.00%"
+            
+            return daily_changes
+            
+        except Exception as e:
+            print(f"Error calculando cambios diarios: {e}")
+            # Devolver valores por defecto para todos los símbolos
+            return {symbol: "+0.00%" for symbol in self.token_frames.keys()}
 
     def load_history(self):
         """Carga el historial desde archivo - optimizado para muchos datos"""
@@ -1516,6 +1582,9 @@ class ModernTradingGUI:
             
             # ✅ CALCULAR TODAS LAS NUEVAS MÉTRICAS DE RENDIMIENTO
             performance_data = self.calculate_all_performance_metrics(total_balance)
+
+            # ✅ CALCULAR CAMBIOS DIARIOS PARA TODOS LOS TOKENS A LA VEZ
+            daily_changes = self.calculate_all_tokens_daily_change()
             
             # ✅ OBTENER DATOS DE TOKENS (existente)
             symbol_data = {}
@@ -1527,6 +1596,7 @@ class ModernTradingGUI:
                     balance = self.bot.account.get_symbol_balance(symbol)
                     usd_value = balance * price
                     pct = (usd_value / total_balance * 100) if total_balance > 0 else 0
+                    daily_change = daily_changes.get(symbol, "+0.00%")
                     
                     symbol_data[symbol] = {
                         'signals': signals,
@@ -1534,7 +1604,8 @@ class ModernTradingGUI:
                         'price': price,
                         'balance': balance,
                         'usd': usd_value,
-                        'pct': pct
+                        'pct': pct,
+                        'daily_change': daily_change
                     }
                 except Exception as e:
                     print(f"Error updating {symbol}: {e}")
