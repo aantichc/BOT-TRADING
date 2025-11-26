@@ -119,6 +119,14 @@ class CapitalManager:
                             if self.gui:
                                 self.gui.log_trade(error_msg, 'RED')
         
+        # ✅ MARCAR QUE EL PRIMER REBALANCE SE HA COMPLETADO
+        if not self.first_rebalance_done:
+            self.first_rebalance_done = True
+            completion_msg = "✅ Initial Rebalance Completed"
+            actions.append(completion_msg)
+            if self.gui:
+                self.gui.log_trade(completion_msg, 'GREEN')
+        
         return actions if actions else "No ajustes necesarios"
 
     def _get_signal_change_message(self, symbol, signals, old_weight, new_weight):
