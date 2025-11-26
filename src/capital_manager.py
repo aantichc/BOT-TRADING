@@ -1,5 +1,4 @@
-
-# Archivo: capital_manager.py
+# Archivo: capital_manager.py - VERSIÓN CORREGIDA
 from config import TIMEFRAMES, SYMBOLS, TIMEFRAME_WEIGHTS, MIN_TRADE_DIFF
 from datetime import datetime
 
@@ -10,8 +9,8 @@ class CapitalManager:
         self.gui = gui
         self.base_allocation = 1.0 / len(SYMBOLS)
         self.last_weights = {s: 0.0 for s in SYMBOLS}
-        self.SYMBOLS = SYMBOLS      # ← SIN ESTO self.bot.manager.SYMBOLS daba error
-        self.initialized = False  # ✅ NUEVO FLAG
+        self.SYMBOLS = SYMBOLS
+        self.initialized = False
     
     def get_signals(self, symbol):
         signals = {}
@@ -59,7 +58,6 @@ class CapitalManager:
                 continue
             
             if signal_changed or manual:
-                # ✅ SOLO LOGGEAR CAMBIOS REALES (no inicialización)
                 if signal_changed and not manual:
                     signal_change_msg = self._get_signal_change_message(symbol, signals, old_weight, weight)
                     actions.append(signal_change_msg)
@@ -74,37 +72,57 @@ class CapitalManager:
                 
                 if abs(diff_usd) > MIN_TRADE_DIFF:
                     if diff_usd > 0:
-                        # COMPRA
+                        # ✅ COMPRA - VERIFICAR CAPITAL DISPONIBLE ANTES
+                        available_usdc = self.account.get_available_usdc()
+                        
+                        # ✅ SI NO HAY SUFICIENTE CAPITAL, AJUSTAR AL DISPONIBLE
+                        if available_usdc < diff_usd:
+                            original_diff = diff_usd
+                            diff_usd = available_usdc
+                            
+                            # ✅ SOLO COMPRAR SI EL MONTO AJUSTADO ES SUFICIENTE
+                            if diff_usd > MIN_TRADE_DIFF:
+                                msg = f"💰 CAPITAL LIMITADO: Comprando {symbol} con ${diff_usd:.2f} (de ${original_diff:.2f} objetivo)"
+                                actions.append(msg)
+                                if self.gui:
+                                    self.gui.log_trade(msg, 'YELLOW')
+                            else:
+                                msg = f"❌ CAPITAL INSUFICIENTE: Necesita ${original_diff:.2f}, disponible ${available_usdc:.2f}"
+                                actions.append(msg)
+                                if self.gui:
+                                    self.gui.log_trade(msg, 'RED')
+                                continue  # Saltar esta compra
+                        
+                        # ✅ EJECUTAR COMPRA CON MONTO AJUSTADO
                         success, msg = self.account.buy_market(symbol, diff_usd)
-                        #if success:
-                            #log_msg = f"🟢 COMPRA {symbol}: ${diff_usd:.2f} | Target: ${target_usd:.2f} | Peso: {weight:.2f}"
-                            #actions.append(log_msg)
-                            #if self.gui:
-                                #self.gui.log_trade(log_msg, 'GREEN')
-                        #else:
-                            #error_msg = f"❌ ERROR COMPRA {symbol}: {msg}"
-                            #actions.append(error_msg)
-                            #if self.gui:
-                                #self.gui.log_trade(error_msg, 'RED')
+                        if success:
+                            log_msg = f"🟢 COMPRA {symbol}: ${diff_usd:.2f} | Target: ${target_usd:.2f} | Peso: {weight:.2f}"
+                            actions.append(log_msg)
+                            if self.gui:
+                                self.gui.log_trade(log_msg, 'GREEN')
+                        else:
+                            error_msg = f"❌ ERROR COMPRA {symbol}: {msg}"
+                            actions.append(error_msg)
+                            if self.gui:
+                                self.gui.log_trade(error_msg, 'RED')
                     else:
                         # VENTA
                         quantity = abs(diff_usd) / price
                         success, msg = self.account.sell_market(symbol, quantity)
-                        #if success:
-                            #log_msg = f"🔴 VENTA {symbol}: {quantity:.6f} (${abs(diff_usd):.2f}) | Peso: {weight:.2f}"
-                            #actions.append(log_msg)
-                            #if self.gui:
-                                #self.gui.log_trade(log_msg, 'RED')
-                        #else:
-                            #error_msg = f"❌ ERROR VENTA {symbol}: {msg}"
-                            #actions.append(error_msg)
-                            #if self.gui:
-                                #self.gui.log_trade(error_msg, 'RED')
+                        if success:
+                            log_msg = f"🔴 VENTA {symbol}: {quantity:.6f} (${abs(diff_usd):.2f}) | Peso: {weight:.2f}"
+                            actions.append(log_msg)
+                            if self.gui:
+                                self.gui.log_trade(log_msg, 'RED')
+                        else:
+                            error_msg = f"❌ ERROR VENTA {symbol}: {msg}"
+                            actions.append(error_msg)
+                            if self.gui:
+                                self.gui.log_trade(error_msg, 'RED')
         
         # ✅ MARCAR COMO INICIALIZADO DESPUÉS DEL PRIMER CICLO
         if not self.initialized:
             self.initialized = True
-            # ✅ LOG INICIAL ÚTIL - RESUMEN DE SEÑALES ACTUALES
             initial_summary = self._get_initial_summary()
             actions.append(initial_summary)
             if self.gui:

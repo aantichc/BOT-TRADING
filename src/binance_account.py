@@ -55,7 +55,8 @@ class BinanceAccount:
             formatted = float(steps * step_dec)
             return max(min_qty, formatted)
         return quantity
-    
+
+    # Archivo: binance_account.py - MODIFICAR MÉTODO buy_market
     def buy_market(self, symbol, usd_amount):
         if not TRADING_ENABLED:
             msg = f"[SIM] 🟢 COMPRA {symbol}: ${usd_amount:.1f}"
@@ -63,23 +64,61 @@ class BinanceAccount:
                 self.gui.log_trade(msg, 'GREEN')
             return True, msg
         try:
+            # ✅ OBTENER BALANCE DISPONIBLE EN USDC
+            available_usdc = self.get_available_usdc()
+            
+            # ✅ SI NO HAY SUFICIENTE CAPITAL, USAR TODO EL DISPONIBLE
+            if available_usdc < usd_amount:
+                usd_amount = available_usdc
+                if usd_amount < MIN_TRADE_DIFF:
+                    msg = f"❌ CAPITAL INSUFICIENTE {symbol}: Necesita ${usd_amount:.2f}, disponible ${available_usdc:.2f}"
+                    if self.gui: 
+                        self.gui.log_trade(msg, 'RED')
+                    return False, msg
+                
+                msg = f"⚠️ CAPITAL LIMITADO {symbol}: Usando ${usd_amount:.2f} de ${available_usdc:.2f} disponible"
+                if self.gui: 
+                    self.gui.log_trade(msg, 'YELLOW')
+            
             price = self.get_current_price(symbol)
             quantity = self.format_quantity(symbol, usd_amount / price)
+            
+            # ✅ VERIFICAR QUE LA CANTIDAD SEA VÁLIDA
+            if quantity <= 0:
+                msg = f"❌ CANTIDAD INVÁLIDA {symbol}: {quantity}"
+                if self.gui: 
+                    self.gui.log_trade(msg, 'RED')
+                return False, msg
+                
             order = self.client.order_market_buy(symbol=symbol, quantity=quantity)
             
             # Log detallado
             executed_price = float(order['fills'][0]['price']) if order.get('fills') else price
             executed_total = float(order['cummulativeQuoteQty']) if order.get('cummulativeQuoteQty') else usd_amount
             
-            msg = f"BUY {symbol}:{quantity:.1f} at ${executed_price:.2f}= ${executed_total:.2f}"
+            msg = f"🟢 COMPRA {symbol}: {quantity:.6f} a ${executed_price:.4f} = ${executed_total:.2f}"
             if self.gui: 
                 self.gui.log_trade(msg, 'GREEN')
             return True, msg
+            
         except BinanceAPIException as e:
             msg = f"❌ ERROR COMPRA {symbol}: {e.message}"
             if self.gui: 
                 self.gui.log_trade(msg, 'RED')
             return False, msg
+
+
+    def get_available_usdc(self):
+        """Obtiene el balance disponible en USDC"""
+        try:
+            account = self.client.get_account()
+            for balance in account['balances']:
+                if balance['asset'] == 'USDC':
+                    return float(balance['free'])
+            return 0.0
+        except Exception as e:
+            print(f"Error getting USDC balance: {e}")
+            return 0.0
 
     def sell_market(self, symbol, quantity):
         if not TRADING_ENABLED:
