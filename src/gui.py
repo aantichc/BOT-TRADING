@@ -13,6 +13,7 @@ import queue
 import numpy as np
 from scipy.interpolate import make_interp_spline
 import subprocess  
+from config import DEFAULT_CHART_TIMEFRAME
 
 # Configuración de colores
 DARK_BG = "#0f0f0f"
@@ -486,7 +487,7 @@ class ModernTradingGUI:
         # Selector de timeframe - CORREGIDO con estilo oscuro
         tk.Label(control_frame, text="TIMEFRAME:", bg=DARK_BG, fg=TEXT_SECONDARY, 
                 font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=(20,5))
-        self.tf_var = tk.StringVar(value="1h")
+        self.tf_var = tk.StringVar(value=DEFAULT_CHART_TIMEFRAME)
         tf_combo = ttk.Combobox(control_frame, textvariable=self.tf_var, 
                             values=["15m", "30m", "1h", "2h", "4h", "1D"], 
                             width=8, state="readonly", font=("Arial", 10),

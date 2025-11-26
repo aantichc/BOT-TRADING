@@ -7,3 +7,4 @@ TIMEFRAMES = {"30m": "30m", "1h": "1h", "2h": "2h"}
 TIMEFRAME_WEIGHTS = {"30m": 0.30, "1h": 0.30, "2h": 0.40}
 UPDATE_INTERVAL = 20
 MIN_TRADE_DIFF = 15
+DEFAULT_CHART_TIMEFRAME = "1D"  # Opciones: "15m", "30m", "1h", "2h", "4h", "1D"
