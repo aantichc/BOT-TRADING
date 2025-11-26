@@ -2,6 +2,7 @@
 import tkinter as tk
 from tkinter import ttk
 from datetime import datetime, timedelta
+import time
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.patches as patches
@@ -9,6 +10,8 @@ from matplotlib.figure import Figure
 import json
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
 import queue
 import numpy as np
 from scipy.interpolate import make_interp_spline
@@ -40,6 +43,19 @@ class ModernTradingGUI:
         # ✅ INICIALIZAR CACHE DE COMISIONES
         self._cached_fees_period = self.get_empty_fees()
         self._last_fees_calc = datetime.now() - timedelta(hours=2)  # Forzar primera actualización
+        
+        # ✅ NUEVAS VARIABLES PARA OPTIMIZACIÓN
+        self.update_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="GUI_Update")
+        self.last_update_time = {}
+        self.update_intervals = {
+            'metrics': 60,        # 1 minuto
+            'portfolio': 60,      # 1 minuto  
+            'tokens': 30,         # 30 segundos
+            'chart': 60,          # 1 minuto
+            'fees': 1800,          # 30 minutos
+            'daily_change': 60    # 1 minuto
+        }
+        self.is_updating = {key: False for key in self.update_intervals}
         
         # Configuración de matplotlib...
         plt.rcParams['figure.facecolor'] = DARK_BG
@@ -133,47 +149,6 @@ class ModernTradingGUI:
         # 4. PROGRAMAR SIGUIENTE - SIEMPRE 5 MINUTOS
         if not self.closing:
             self.root.after(300000, self.cleanup_memory)
-
-    def process_data_queue(self):
-        """Procesar cola con actualizaciones SEGURAS"""
-        try:
-            processed_count = 0
-            MAX_PROCESS_PER_CYCLE = 20
-            
-            while processed_count < MAX_PROCESS_PER_CYCLE:
-                item = self.data_queue.get_nowait()
-                processed_count += 1
-                
-                if item[0] == "log":
-                    self.safe_ui_update(self._add_log_message, item[1], item[2])
-                elif item[0] == "token_data":
-                    self.safe_ui_update(self._update_token_ui, item[1])
-                elif item[0] == "metrics":
-                    self.safe_ui_update(self._update_metrics_ui, item[1])
-                elif item[0] == "portfolio":
-                    self.safe_ui_update(self._update_portfolio_ui, item[1])
-                elif item[0] == "chart_update":
-                    self.safe_ui_update(self._update_main_chart, item[1])
-                        
-        except queue.Empty:
-            pass
-        finally:
-            # LIMPIAR COLA SI SE ESTÁ LLENANDO DEMASIADO
-            if self.data_queue.qsize() > 100:
-                print("⚠️ Limpiando queue sobrecargada...")
-                try:
-                    while self.data_queue.qsize() > 50:
-                        self.data_queue.get_nowait()
-                except queue.Empty:
-                    pass
-            
-            # Programar siguiente actualización
-            if (hasattr(self, 'bot') and self.bot is not None and 
-                hasattr(self.bot, 'running') and self.bot.running and
-                not self.updating):
-                self.root.after(20000, self.safe_update_ui)
-            else:
-                self.root.after(2000, self.process_data_queue)
 
     def _update_token_ui(self, symbol_data):
         """Actualiza la UI de tokens de forma SEGURA"""
@@ -1031,19 +1006,293 @@ class ModernTradingGUI:
             else:
                 label.config(fg=TEXT_SECONDARY)  # Gris para comisiones bajas
 
+
     def safe_update_ui(self):
-        """Inicia actualización en hilo separado de forma segura - EVITA DUPLICADOS"""
+        """✅ ACTUALIZACIÓN OPTIMIZADA - EVITA DUPLICADOS Y SOBRECARGA"""
+        if self.closing or not self.bot or not self.bot.running:
+            return
+            
+        current_time = time.time()
+        
+        # ✅ ACTUALIZACIÓN DE TOKENS (cada 20s)
+        if self._should_update('tokens', current_time):
+            self._schedule_background_task(self._update_tokens_background)
+        
+        # ✅ ACTUALIZACIÓN DE MÉTRICAS (cada 30s)
+        if self._should_update('metrics', current_time):
+            self._schedule_background_task(self._update_metrics_background)
+        
+        # ✅ ACTUALIZACIÓN DE CARTERA (cada 60s) - MENOS FRECUENTE
+        if self._should_update('portfolio', current_time):
+            self._schedule_background_task(self._update_portfolio_background)
+        
+        # ✅ ACTUALIZACIÓN DE GRÁFICO (cada 30s)
+        if self._should_update('chart', current_time):
+            self._schedule_background_task(self._update_chart_background)
+        
+        # ✅ PROGRAMAR SIGUIENTE ACTUALIZACIÓN
+        if not self.closing and self.bot and self.bot.running:
+            self.root.after(10000, self.safe_update_ui)  # ✅ Revisar cada 10s
+
+    def _schedule_background_task(self, task_function):
+        """Programa una tarea en background de forma segura"""
+        def background_wrapper():
+            try:
+                task_function()
+            except Exception as e:
+                print(f"Error en tarea background: {e}")
+                
+        # Usar executor en lugar de threading directo
+        future = self.update_executor.submit(background_wrapper)
+        future.add_done_callback(self._handle_task_completion)
+        
+    def _handle_task_completion(self, future):
+        """Maneja la finalización de tareas"""
+        try:
+            future.result()  # Esto propaga cualquier excepción
+        except Exception as e:
+            print(f"Error en tarea completada: {e}")
+
+    def _should_update(self, update_type, current_time):
+        """Verifica si debe ejecutarse una actualización"""
+        if self.is_updating.get(update_type, False):
+            return False
+            
+        last_time = self.last_update_time.get(update_type, 0)
+        interval = self.update_intervals[update_type]
+        
+        return (current_time - last_time) >= interval
+    
+    def _update_tokens_background(self):
+        """✅ ACTUALIZACIÓN OPTIMIZADA DE TOKENS"""
+        if self.closing or not self.bot:
+            return
+            
+        self.is_updating['tokens'] = True
+        try:
+            symbol_data = {}
+            daily_changes = self._get_cached_daily_changes()  # ✅ CACHEADO
+            
+            for symbol in list(self.token_frames.keys())[:8]:  # ✅ LIMITAR
+                try:
+                    signals = self.bot.manager.get_signals(symbol)
+                    weight = self.bot.manager.calculate_weight(signals)
+                    price = self.bot.account.get_current_price(symbol)
+                    balance = self.bot.account.get_symbol_balance(symbol)
+                    usd_value = balance * price
+                    total_balance = self.bot.account.get_balance_usdc()
+                    pct = (usd_value / total_balance * 100) if total_balance > 0 else 0
+                    
+                    symbol_data[symbol] = {
+                        'signals': signals,
+                        'weight': weight,
+                        'price': price,
+                        'balance': balance,
+                        'usd': usd_value,
+                        'pct': pct,
+                        'daily_change': daily_changes.get(symbol, "+0.00%")
+                    }
+                    
+                    # ✅ PEQUEÑA PAUSA PARA NO SATURAR LA API
+                    time.sleep(0.1)
+                    
+                except Exception as e:
+                    print(f"Error updating {symbol}: {e}")
+                    continue
+
+            # ✅ ENVIAR AL HILO PRINCIPAL
+            self.data_queue.put(("token_data", symbol_data))
+            
+        finally:
+            self.is_updating['tokens'] = False
+            self.last_update_time['tokens'] = time.time()
+
+    def _update_metrics_background(self):
+        """✅ ACTUALIZACIÓN OPTIMIZADA DE MÉTRICAS"""
+        if self.closing or not self.bot:
+            return
+            
+        self.is_updating['metrics'] = True
+        try:
+            total_balance = self.bot.account.get_balance_usdc()
+            
+            # ✅ ACTUALIZAR HISTORIAL (RÁPIDO)
+            now = datetime.now()
+            self._update_history(now, total_balance)
+            
+            # ✅ MÉTRICAS BÁSICAS (RÁPIDAS)
+            performance_data = self.calculate_all_performance_metrics(total_balance)
+            
+            # ✅ COMISIONES CACHEADAS (NO calcular cada vez)
+            fees_data = self._get_cached_fees()
+            
+            metrics = {
+                'total_balance': total_balance,
+                'change_30m': performance_data['change_30m'],
+                'change_1h': performance_data['change_1h'],
+                'change_2h': performance_data['change_2h'],
+                'change_4h': performance_data['change_4h'],
+                'change_1d': performance_data['change_1d'],
+                'change_1w': performance_data['change_1w'],
+                'change_1m': performance_data['change_1m'],
+                'change_1y': performance_data['change_1y'],
+                'fees_1d': f"${fees_data['1d']:.2f}",
+                'fees_1w': f"${fees_data['1w']:.2f}",
+                'fees_1m': f"${fees_data['1m']:.2f}",
+                'fees_1y': f"${fees_data['1y']:.2f}",
+            }
+            
+            self.data_queue.put(("metrics", metrics))
+            
+        finally:
+            self.is_updating['metrics'] = False
+            self.last_update_time['metrics'] = time.time()
+
+
+    def _update_portfolio_background(self):
+        """✅ ACTUALIZACIÓN OPTIMIZADA DE CARTERA - MENOS FRECUENTE"""
+        if self.closing or not self.bot:
+            return
+            
+        self.is_updating['portfolio'] = True
+        try:
+            total_balance = self.bot.account.get_balance_usdc()
+            portfolio_data = self.get_portfolio_data(total_balance)
+            self.data_queue.put(("portfolio", portfolio_data))
+            
+        finally:
+            self.is_updating['portfolio'] = False
+            self.last_update_time['portfolio'] = time.time()
+
+
+    def _update_chart_background(self):
+        """✅ ACTUALIZACIÓN OPTIMIZADA DEL GRÁFICO"""
         if self.closing:
             return
             
-        if (not self.updating and self.bot is not None and 
-            hasattr(self.bot, 'running') and self.bot.running):
-            self.updating = True
-            threading.Thread(target=self._background_update, daemon=True).start()
+        self.is_updating['chart'] = True
+        try:
+            total_balance = self.bot.account.get_balance_usdc() if self.bot else 0
+            self.data_queue.put(("chart_update", total_balance))
+            
+        finally:
+            self.is_updating['chart'] = False
+            self.last_update_time['chart'] = time.time()
+
+    def _get_cached_daily_changes(self):
+        """✅ OBTENER CAMBIOS DIARIOS CACHEADOS"""
+        current_time = time.time()
+        last_time = self.last_update_time.get('daily_change', 0)
         
-        # ✅ SOLO PROGRAMAR SIGUIENTE SI NO ESTAMOS CERRANDO
-        if not self.closing and self.bot is not None and self.bot.running:
-            self.root.after(20000, self.safe_update_ui)  # 20 segundos
+        if (current_time - last_time) >= self.update_intervals['daily_change']:
+            # Actualizar cache
+            self._cached_daily_changes = self.calculate_all_tokens_daily_change()
+            self.last_update_time['daily_change'] = current_time
+            
+        return getattr(self, '_cached_daily_changes', {})
+
+    def _get_cached_fees(self):
+        """✅ OBTENER COMISIONES CACHEADAS"""
+        current_time = time.time()
+        last_time = self.last_update_time.get('fees', 0)
+        
+        if (current_time - last_time) >= self.update_intervals['fees']:
+            # Actualizar cache cada 5 minutos
+            self._cached_fees = self.calculate_fees_by_period()
+            self.last_update_time['fees'] = current_time
+            
+        return getattr(self, '_cached_fees', self.get_empty_fees())
+
+    def process_data_queue(self):
+        """✅ VERSIÓN OPTIMIZADA - LÍMITE DE PROCESAMIENTO"""
+        try:
+            processed = 0
+            MAX_PROCESS = 10  # ✅ LÍMITE MÁXIMO
+            
+            while processed < MAX_PROCESS:
+                try:
+                    item = self.data_queue.get_nowait()
+                    processed += 1
+                    
+                    if item[0] == "log":
+                        self.safe_ui_update(self._add_log_message, item[1], item[2])
+                    elif item[0] == "token_data":
+                        self.safe_ui_update(self._update_token_ui, item[1])
+                    elif item[0] == "metrics":
+                        self.safe_ui_update(self._update_metrics_ui, item[1])
+                    elif item[0] == "portfolio":
+                        self.safe_ui_update(self._update_portfolio_ui, item[1])
+                    elif item[0] == "chart_update":
+                        self.safe_ui_update(self._update_main_chart, item[1])
+                        
+                except queue.Empty:
+                    break
+                    
+        except Exception as e:
+            print(f"Error procesando cola: {e}")
+        finally:
+            # ✅ LIMPIAR COLA SI SE LLENA DEMASIADO
+            if self.data_queue.qsize() > 50:
+                self._clean_queue()
+            
+            # ✅ PROGRAMAR SIGUIENTE ACTUALIZACIÓN MÁS INTELIGENTE
+            if not self.closing:
+                self.root.after(100, self.process_data_queue)
+
+    def _clean_queue(self):
+        """✅ LIMPIAR COLA MANTENIENDO LOS DATOS MÁS RECIENTES"""
+        try:
+            # Mantener solo los últimos 20 elementos
+            items = []
+            while self.data_queue.qsize() > 20:
+                try:
+                    items.append(self.data_queue.get_nowait())
+                except queue.Empty:
+                    break
+            
+            # Re-insertar los más recientes (invertir el orden)
+            for item in items[-10:]:  # Mantener últimos 10
+                try:
+                    self.data_queue.put_nowait(item)
+                except queue.Full:
+                    break
+                    
+            print(f"🧹 Cola limpiada: {len(items)} elementos removidos")
+            
+        except Exception as e:
+            print(f"Error limpiando cola: {e}")
+
+    def on_close(self):
+        """✅ CIERRE OPTIMIZADO"""
+        if self.closing:
+            return
+        
+        self.closing = True
+        print("🔴 Cerrando aplicación optimizadamente...")
+        
+        # ✅ DETENER EJECUTOR PRIMERO
+        if hasattr(self, 'update_executor'):
+            self.update_executor.shutdown(wait=False)
+        
+        # ✅ DETENER BOT
+        if hasattr(self, 'bot') and self.bot:
+            self.bot.force_stop = True
+            self.bot.running = False
+        
+        # ✅ GUARDAR HISTORIAL
+        try:
+            self.save_history()
+        except:
+            pass
+        
+        # ✅ CERRAR VENTANA
+        try:
+            self.root.quit()
+            self.root.destroy()
+        except:
+            pass
+        
+        print("✅ Aplicación cerrada correctamente")
 
     def calculate_all_performance_metrics(self, total_balance):
         """Calcula todas las métricas de rendimiento"""
@@ -1440,37 +1689,6 @@ class ModernTradingGUI:
             print(f"📈 Muestreo aplicado: {len(filtered)} puntos (step: {step})")
         
         return filtered
-
-    def on_close(self):
-        """Maneja el cierre de la aplicación - SALIDA INMEDIATA"""
-        if self.closing:
-            return
-        
-        self.closing = True
-        print("🔴 CERRANDO APLICACIÓN...")
-        
-        # ✅ DETENER TODO INMEDIATAMENTE
-        self.updating = False
-        
-        if hasattr(self, 'bot') and self.bot is not None:
-            self.bot.force_stop = True
-            self.bot.running = False
-        
-        # ✅ GUARDAR RÁPIDAMENTE
-        try:
-            self.save_history()
-        except:
-            pass
-        
-        # ✅ CERRAR VENTANA
-        try:
-            self.root.quit()
-        except:
-            pass
-        
-        # ✅ SALIR
-        import os
-        os._exit(0)
 
     def _perform_restart(self):
         """Ejecuta el reinicio completo - CON DELAY DE ESTABILIZACIÓN"""
