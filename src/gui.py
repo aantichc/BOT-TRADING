@@ -135,26 +135,26 @@ class ModernTradingGUI:
             self.root.after(300000, self.cleanup_memory)
 
     def process_data_queue(self):
-        """Procesar cola con límite y limpieza"""
+        """Procesar cola con actualizaciones SEGURAS"""
         try:
             processed_count = 0
-            MAX_PROCESS_PER_CYCLE = 20  # No procesar más de 20 items por ciclo
+            MAX_PROCESS_PER_CYCLE = 20
             
             while processed_count < MAX_PROCESS_PER_CYCLE:
                 item = self.data_queue.get_nowait()
                 processed_count += 1
                 
                 if item[0] == "log":
-                    self._add_log_message(item[1], item[2])
+                    self.safe_ui_update(self._add_log_message, item[1], item[2])
                 elif item[0] == "token_data":
-                    self._update_token_ui(item[1])
+                    self.safe_ui_update(self._update_token_ui, item[1])
                 elif item[0] == "metrics":
-                    self._update_metrics_ui(item[1])
+                    self.safe_ui_update(self._update_metrics_ui, item[1])
                 elif item[0] == "portfolio":
-                    self._update_portfolio_ui(item[1])
+                    self.safe_ui_update(self._update_portfolio_ui, item[1])
                 elif item[0] == "chart_update":
-                    self._update_main_chart(item[1])
-                    
+                    self.safe_ui_update(self._update_main_chart, item[1])
+                        
         except queue.Empty:
             pass
         finally:
@@ -162,7 +162,7 @@ class ModernTradingGUI:
             if self.data_queue.qsize() > 100:
                 print("⚠️ Limpiando queue sobrecargada...")
                 try:
-                    while self.data_queue.qsize() > 50:  # Dejar solo los 50 más recientes
+                    while self.data_queue.qsize() > 50:
                         self.data_queue.get_nowait()
                 except queue.Empty:
                     pass
@@ -171,16 +171,16 @@ class ModernTradingGUI:
             if (hasattr(self, 'bot') and self.bot is not None and 
                 hasattr(self.bot, 'running') and self.bot.running and
                 not self.updating):
-                self.root.after(20000, self.safe_update_ui)  # Aumentar a 20 segundos
+                self.root.after(20000, self.safe_update_ui)
             else:
-                self.root.after(2000, self.process_data_queue)  # 2 segundos
+                self.root.after(2000, self.process_data_queue)
 
     def _update_token_ui(self, symbol_data):
-        """Actualiza la UI de tokens con símbolo + %24H + precio en misma línea"""
-            # ✅ VERIFICACIÓN DE SEGURIDAD
+        """Actualiza la UI de tokens de forma SEGURA"""
+        # Esta función ahora siempre se ejecuta en el hilo principal
         if self.closing or not hasattr(self, 'token_frames'):
             return
-
+            
         for symbol, data in symbol_data.items():
             if symbol in self.token_frames and not self.closing:
                 frame_data = self.token_frames[symbol].data
@@ -278,7 +278,8 @@ class ModernTradingGUI:
                     )
                     
                 except Exception as e:
-                    print(f"Error updating {symbol} UI: {e}")
+                    if "main thread is not in main loop" not in str(e):
+                        print(f"Error updating {symbol} UI: {e}")
 
     def get_price_change_percentage(self, symbol, timeframe):
         """Calcula el % de cambio de precio para un timeframe específico"""
@@ -320,6 +321,8 @@ class ModernTradingGUI:
 
     def _update_metrics_ui(self, metrics):
         """Actualiza todas las métricas incluyendo comisiones por período"""
+        if self.closing:
+           return
         self.total_balance_label.config(text=f"${metrics['total_balance']:,.2f}")
         
         # Performance capital
@@ -488,16 +491,16 @@ class ModernTradingGUI:
             self.stop_btn.config(state='disabled', bg='gray') 
             self.rebalance_btn.config(state='disabled', bg='gray')
         
-        # Selector de timeframe - CORREGIDO con estilo oscuro
+        # Selector de timeframe SIMPLIFICADO
         tk.Label(control_frame, text="TIMEFRAME:", bg=DARK_BG, fg=TEXT_SECONDARY, 
                 font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=(20,5))
         self.tf_var = tk.StringVar(value=DEFAULT_CHART_TIMEFRAME)
         tf_combo = ttk.Combobox(control_frame, textvariable=self.tf_var, 
-                            values=["15m", "30m", "1h", "2h", "4h", "1D"], 
+                            values=["1h", "1D", "1W"],  # SOLO 3 TIMEFRAMES
                             width=8, state="readonly", font=("Arial", 10),
-                            style='Dark.TCombobox')  # Aplicar estilo oscuro
-
+                            style='Dark.TCombobox')
         tf_combo.pack(side=tk.LEFT)
+        tf_combo.bind('<<ComboboxSelected>>', self._on_timeframe_change)
 
         # Contenedor principal
         main_container = tk.Frame(self.root, bg=DARK_BG)
@@ -633,6 +636,16 @@ class ModernTradingGUI:
         
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=(5, 0))
         scrollbar_log.pack(side=tk.RIGHT, fill=tk.Y)
+
+    def _on_timeframe_change(self, event=None):
+        """Actualizar gráfico cuando cambia el timeframe"""
+        print(f"🔄 Cambiando timeframe a: {self.tf_var.get()}")
+        if hasattr(self, 'history') and self.history:
+            total_balance = self.history[-1][1] if self.history else 0
+            # Forzar actualización inmediata
+            self._update_main_chart(total_balance)
+        else:
+            print("⚠️ No hay historial para mostrar")
 
     def create_button(self, parent, text, color, command):
         """Crea un botón estilizado"""
@@ -830,7 +843,7 @@ class ModernTradingGUI:
             return {symbol: "+0.00%" for symbol in self.token_frames.keys()}
 
     def load_history(self):
-        """Carga el historial desde archivo - optimizado para muchos datos"""
+        """Carga el historial y comprime datos antiguos"""
         history_file = "capital_history.json"
         if os.path.exists(history_file):
             try:
@@ -840,16 +853,17 @@ class ModernTradingGUI:
                 loaded_history = [(datetime.fromisoformat(d[0]), d[1]) for d in data]
                 print(f"📈 Historial cargado: {len(loaded_history)} puntos")
                 
-                # ✅ SI HAY MÁS DE 5000 PUNTOS, CONSERVAR SOLO LOS MÁS RECIENTES
-                if len(loaded_history) > 5000:
-                    loaded_history = loaded_history[-5000:]
-                    print(f"📊 Historial recortado a {len(loaded_history)} puntos más recientes")
+                # COMPRIMIR DATOS ANTIGUOS: mantener solo 1 punto por hora para datos > 1 semana
+                if len(loaded_history) > 1000:
+                    compressed = self._compress_old_data(loaded_history)
+                    print(f"📊 Historial comprimido: {len(compressed)} puntos")
+                    return compressed
                 
                 return loaded_history
                 
             except Exception as e:
                 print(f"❌ Error cargando historial: {e}")
-    
+            
         # ✅ Si no hay historial, crear uno inicial
         if self.bot and hasattr(self.bot, 'account'):
             try:
@@ -860,59 +874,30 @@ class ModernTradingGUI:
             except:
                 pass
         
-    def compress_old_data(self):
-        """Comprime datos antiguos para ahorrar espacio manteniendo tendencias"""
-        if len(self.history) < 1000:  # Solo comprimir si hay muchos datos
-            print("📊 No hay suficientes datos para comprimir")
-            return
+    def _compress_old_data(self, history):
+        """Comprime datos antiguos manteniendo 1 punto por hora"""
+        if len(history) <= 1000:
+            return history
         
-        print(f"🔍 Comprimiendo {len(self.history)} puntos de historial...")
-        
-        # Separar datos recientes (últimas 24 horas) y antiguos
-        cutoff_time = datetime.now() - timedelta(hours=24)
-        recent_data = [point for point in self.history if point[0] >= cutoff_time]
-        old_data = [point for point in self.history if point[0] < cutoff_time]
+        # Separar datos recientes (última semana) y antiguos
+        one_week_ago = datetime.now() - timedelta(days=7)
+        recent_data = [point for point in history if point[0] >= one_week_ago]
+        old_data = [point for point in history if point[0] < one_week_ago]
         
         if len(old_data) <= 500:
-            print("📊 No hay suficientes datos antiguos para comprimir")
-            return
+            return history
         
-        print(f"📊 Comprimiendo {len(old_data)} puntos antiguos...")
-        
-        # Comprimir datos antiguos: conservar 1 punto por hora
+        # Comprimir datos antiguos: 1 punto por hora
         compressed_old = []
         current_hour = None
-        hour_points = []
         
-        # Ordenar por tiempo (por si acaso)
-        old_data.sort(key=lambda x: x[0])
-        
-        for time_point, value in old_data:
+        for time_point, value in sorted(old_data, key=lambda x: x[0]):
             hour_key = time_point.replace(minute=0, second=0, microsecond=0)
             if hour_key != current_hour:
-                if hour_points:  # Guardar el punto medio de la hora anterior
-                    # Usar el punto del medio de la hora para mejor representación
-                    mid_index = len(hour_points) // 2
-                    compressed_old.append(hour_points[mid_index])
-                
+                compressed_old.append((time_point, value))
                 current_hour = hour_key
-                hour_points = []
-            
-            hour_points.append((time_point, value))
         
-        # Agregar la última hora
-        if hour_points:
-            mid_index = len(hour_points) // 2
-            compressed_old.append(hour_points[mid_index])
-        
-        # Combinar datos comprimidos con recientes
-        self.history = compressed_old + recent_data
-        self.history.sort(key=lambda x: x[0])  # Re-ordenar por tiempo
-        
-        print(f"✅ Compresión completada: {len(compressed_old)} puntos antiguos + {len(recent_data)} recientes = {len(self.history)} total")
-        
-        # Guardar después de comprimir
-        self.save_history()
+        return compressed_old + recent_data
 
     def save_history(self):
         """Guarda el historial inmediatamente"""
@@ -969,6 +954,25 @@ class ModernTradingGUI:
             if self.bot:
                 self.bot.stop_completely()
             self.root.after(1000, self._perform_restart)
+
+    def safe_ui_update(self, func, *args, **kwargs):
+        """Ejecuta una función de UI de forma segura en el hilo principal"""
+        if self.closing or not hasattr(self, 'root') or not self.root:
+            return
+            
+        def safe_wrapper():
+            if not self.closing and hasattr(self, 'root') and self.root:
+                try:
+                    func(*args, **kwargs)
+                except Exception as e:
+                    if "main thread is not in main loop" not in str(e):
+                        print(f"UI update error: {e}")
+        
+        try:
+            self.root.after(0, safe_wrapper)
+        except Exception as e:
+            if "main thread is not in main loop" not in str(e):
+                print(f"Error scheduling UI update: {e}")
 
     def log_trade(self, msg, color="white"):
         """Agrega mensaje al log de forma thread-safe"""
@@ -1285,9 +1289,8 @@ class ModernTradingGUI:
         if self.closing:
             return
             
-        def safe_update():
+        def update_token():
             try:
-                # Verificar que no estemos cerrando
                 if self.closing or not hasattr(self, 'bot') or self.bot is None:
                     return
                     
@@ -1322,12 +1325,8 @@ class ModernTradingGUI:
                 if "main thread is not in main loop" not in str(e):
                     print(f"Error en actualización inmediata de {symbol}: {e}")
         
-        # ✅ EJECUTAR EN HILO PRINCIPAL usando after()
-        try:
-            if hasattr(self, 'root') and self.root and not self.closing:
-                self.root.after(0, safe_update)
-        except Exception as e:
-            print(f"Error programando actualización para {symbol}: {e}")
+        # Usar el método seguro
+        self.safe_ui_update(update_token)
 
     def get_empty_fees(self):
         """Retorna estructura vacía de comisiones"""
@@ -1468,79 +1467,129 @@ class ModernTradingGUI:
         return f"{sign}{change:.2f}%"
 
     def _update_history(self, now, total_balance):
-        """Historial optimizado - máximo 1000 puntos"""
-        
-        # Solo agregar si hay cambio significativo (> $0.10)
-        if self.history and abs(total_balance - self.history[-1][1]) < 0.10:
-            return  # No agregar puntos duplicados
+        """Historial SIMPLIFICADO - solo 1 punto por minuto"""
+        # Solo agregar si ha pasado al menos 1 minuto desde el último punto
+        if self.history:
+            last_time = self.history[-1][0]
+            time_diff = (now - last_time).total_seconds()
+            if time_diff < 60:  # Menos de 1 minuto
+                return
         
         self.history.append((now, total_balance))
         
-        # LIMITAR A 1000 PUNTOS SIEMPRE
-        if len(self.history) > 1000:
-            # Mantener distribución: 800 antiguos + 200 recientes
-            keep_old = 800
-            keep_recent = 200
-            
-            if len(self.history) > keep_old + keep_recent:
-                # Combinar puntos antiguos comprimidos + recientes
-                old_data = self.history[:keep_old]
-                recent_data = self.history[-keep_recent:]
-                
-                # Comprimir datos antiguos: 1 punto cada 10
-                compressed_old = old_data[::10]
-                self.history = compressed_old + recent_data
+        # LIMITAR A 5000 PUNTOS MÁXIMO
+        if len(self.history) > 5000:
+            self.history = self.history[-5000:]
+            print("📊 Historial recortado a 5000 puntos")
         
-        # Guardar solo cada 10 actualizaciones para reducir I/O
+        # Guardar solo cada 10 puntos para reducir I/O
         if len(self.history) % 10 == 0:
             self.save_history()
+            print(f"💾 Historial guardado: {len(self.history)} puntos")
 
     def _update_main_chart(self, total_balance):
-        """Actualiza el gráfico principal optimizado para muchos datos"""
+        """Gráfico SIMPLIFICADO - sin suavizado, solo línea directa"""
         try:
             tf = self.tf_var.get()
-            cutoff = datetime.now() - self.get_timedelta_from_tf(tf)
             
-            # Filtrar datos según el timeframe seleccionado
-            filtered = [(t, v) for t, v in self.history if t >= cutoff]
-            
-            # Si hay pocos datos filtrados, mostrar más historial
-            if len(filtered) < 10 and self.history:
-                # Mostrar últimos 100 puntos como mínimo
-                filtered = self.history[-100:]
+            # Filtrar datos según timeframe
+            filtered = self._filter_data_by_timeframe(tf)
             
             if not filtered:
+                # Si no hay datos filtrados, usar punto actual
                 filtered = [(datetime.now(), total_balance)]
+                # Y agregar al historial si es nuevo
+                if not self.history or (datetime.now() - self.history[-1][0]).total_seconds() >= 60:
+                    self.history.append((datetime.now(), total_balance))
 
             times, values = zip(*filtered)
+            
+            # LIMPIAR Y DIBUJAR GRÁFICO SIMPLE
             self.ax.clear()
             
-            # ✅ OPTIMIZAR: Solo suavizar si hay suficientes puntos
-            if len(times) > 10:
-                try:
-                    x_num = np.array([t.timestamp() for t in times])
-                    x_smooth = np.linspace(x_num.min(), x_num.max(), min(300, len(times)))
-                    spl = make_interp_spline(x_num, values, k=3)
-                    y_smooth = spl(x_smooth)
-                    smooth_times = [datetime.fromtimestamp(ts) for ts in x_smooth]
-                    self.ax.plot(smooth_times, y_smooth, color=ACCENT_COLOR, linewidth=3)
-                except:
-                    # Fallback a línea normal si falla el suavizado
-                    self.ax.plot(times, values, color=ACCENT_COLOR, linewidth=3)
-            else:
-                self.ax.plot(times, values, color=ACCENT_COLOR, linewidth=3)
-
+            # Línea directa SIN suavizado
+            self.ax.plot(times, values, color=ACCENT_COLOR, linewidth=2)
+            
+            # Configuración básica
             self.ax.set_facecolor(CARD_BG)
-            self.ax.grid(True, alpha=0.3, color=TEXT_SECONDARY)
+            self.ax.grid(True, alpha=0.2, color=TEXT_SECONDARY)
             self.ax.tick_params(colors=TEXT_SECONDARY)
+            
+            # Título dinámico
+            self.ax.set_title(f"Balance History - {tf}", color=TEXT_COLOR, fontsize=12, pad=10)
             
             # Formatear ejes
             self.ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${x:,.0f}'))
             
+            # Formatear eje X según timeframe
+            self._format_xaxis(tf, times)
+            
+            # Ajustar layout
+            self.fig.tight_layout()
+            
             self.canvas.draw()
+            print(f"📊 Gráfico actualizado: {tf} - {len(filtered)} puntos")
 
         except Exception as e:
             print(f"Error updating main chart: {e}")
+
+    def _format_xaxis(self, tf, times):
+        """Formatea el eje X según el timeframe"""
+        if not times:
+            return
+            
+        # Rotar labels para mejor legibilidad
+        plt.setp(self.ax.xaxis.get_majorticklabels(), rotation=45)
+        
+        # Formato de fecha según timeframe
+        if tf == "1h":
+            # Para 1h: mostrar hora
+            self.ax.xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter('%H:%M'))
+        elif tf == "1D":
+            # Para 1D: mostrar fecha completa
+            self.ax.xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter('%m/%d'))
+        elif tf == "1W":
+            # Para 1W: mostrar mes/día
+            self.ax.xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter('%m/%d'))
+
+    def _filter_data_by_timeframe(self, tf):
+        """Filtra datos según timeframe seleccionado"""
+        if not self.history:
+            return []
+        
+        now = datetime.now()
+        
+        if tf == "1h":
+            cutoff = now - timedelta(hours=24)  # Últimas 24 horas
+            max_points = 200
+        elif tf == "1D":
+            cutoff = now - timedelta(days=30)   # Últimos 30 días
+            max_points = 500
+        elif tf == "1W":
+            cutoff = now - timedelta(days=365)  # Último año
+            max_points = 300
+        else:
+            cutoff = now - timedelta(days=30)   # Por defecto 30 días
+            max_points = 500
+        
+        # Filtrar datos
+        filtered = [(t, v) for t, v in self.history if t >= cutoff]
+        
+        # Si hay muchos puntos, muestrear para mejor rendimiento
+        if len(filtered) > max_points:
+            step = max(1, len(filtered) // max_points)
+            filtered = filtered[::step]
+            print(f"📈 Muestreo aplicado: {len(filtered)} puntos (step: {step})")
+        
+        print(f"📊 Filtrado {tf}: {len(filtered)} puntos desde {cutoff.strftime('%Y-%m-%d %H:%M')}")
+        return filtered
+
+    def get_timedelta_from_tf(self, tf):
+        """Timeframes simplificados"""
+        if tf == "1h": return timedelta(hours=24)    # 24 horas
+        elif tf == "1D": return timedelta(days=30)   # 30 días
+        elif tf == "1W": return timedelta(days=365)  # 1 año
+        else: return timedelta(days=30)              # por defecto
 
     def get_timedelta_from_tf(self, tf):
         """Convierte timeframe a timedelta"""
@@ -1638,6 +1687,8 @@ class ModernTradingGUI:
 
     def _update_portfolio_ui(self, portfolio_data):
         """Actualiza la visualización de la cartera"""
+        if self.closing:
+           return
         # Limpiar treeview
         for item in self.portfolio_tree.get_children():
             self.portfolio_tree.delete(item)
