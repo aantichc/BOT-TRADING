@@ -175,7 +175,7 @@ class ModernTradingGUI:
                 self.root.after(2000, self.process_data_queue)  # 2 segundos
 
     def _update_token_ui(self, symbol_data):
-        """Actualiza la UI de tokens - círculos con señales OO, valores con % cambio"""
+        """Actualiza la UI de tokens con símbolo + %24H + precio en misma línea"""
         for symbol, data in symbol_data.items():
             if symbol in self.token_frames:
                 frame_data = self.token_frames[symbol].data
@@ -183,7 +183,7 @@ class ModernTradingGUI:
                     # Actualizar precio
                     frame_data["price_label"].config(text=f"${data['price']:,.4f}")
                     
-                    # Actualizar cambio diario
+                    # ✅ ACTUALIZAR %24H AL LADO DEL SÍMBOLO (con colores)
                     daily_change_str = data.get('daily_change', '+0.00%')
                     
                     if isinstance(daily_change_str, str):
@@ -196,15 +196,17 @@ class ModernTradingGUI:
                         daily_change_value = 0.0
                         daily_change_str = "+0.00%"
                     
+                    # Determinar color del %24H
                     if daily_change_value > 0:
-                        change_color = ACCENT_COLOR
+                        change_color = ACCENT_COLOR  # Verde
                     elif daily_change_value < 0:
-                        change_color = DANGER_COLOR
+                        change_color = DANGER_COLOR  # Rojo
                     else:
-                        change_color = TEXT_SECONDARY
+                        change_color = TEXT_SECONDARY  # Gris
                     
-                    frame_data["daily_change_label"].config(
-                        text=f"24H: {daily_change_str}",
+                    # ✅ ACTUALIZAR %24H JUNTO AL SÍMBOLO
+                    frame_data["daily_change_header_label"].config(
+                        text=f" {daily_change_str}",  # Espacio antes para separar del símbolo
                         fg=change_color
                     )
                     
@@ -213,37 +215,34 @@ class ModernTradingGUI:
                         text=f"{data['balance']:.6f} → ${data['usd']:,.2f} ({data['pct']:.1f}%)"
                     )
                     
-                    # ✅ CÍRCULOS CON SEÑALES OO + VALORES CON % CAMBIO
+                    # Círculos con señales OO + valores con % cambio
                     for tf, circle_data in frame_data["circles"].items():
-                        # COLOR DEL CÍRCULO: Basado en señal OO (como antes)
-                        color = "gray"  # Por defecto
+                        # Color del círculo: señal OO
+                        color = "gray"
                         if tf in data['signals']:
                             signal = data['signals'][tf]
                             color = "#00ff00" if signal == "GREEN" else "#ffff00" if signal == "YELLOW" else "#ff4444"
                         
-                        # Actualizar color del círculo (SEÑAL OO)
                         circle_data['canvas'].itemconfig(circle_data['circle_id'], fill=color)
                         
-                        # ✅ VALOR NUMÉRICO: % de cambio de precio
+                        # Valor: % cambio de precio
                         percent_change = self.get_price_change_percentage(symbol, tf)
                         
                         # Color del valor basado en % cambio
                         if percent_change > 0.5:
-                            value_color = "#00ff00"  # Verde para cambios positivos fuertes
+                            value_color = "#00ff00"
                         elif percent_change > 0.1:
-                            value_color = "#00ff00"  # Verde para cambios positivos
+                            value_color = "#00ff00"
                         elif percent_change > -0.1:
-                            value_color = "#ffff00"  # Amarillo para cambios neutros
+                            value_color = "#ffff00"
                         elif percent_change > -0.5:
-                            value_color = "#ff4444"  # Rojo para cambios negativos
+                            value_color = "#ff4444"
                         else:
-                            value_color = "#ff4444"  # Rojo para cambios negativos fuertes
+                            value_color = "#ff4444"
                         
-                        # Formatear el texto del valor
                         sign = "+" if percent_change > 0 else ""
                         value_text = f"{sign}{percent_change:.1f}%"
                         
-                        # Actualizar valor numérico (% CAMBIO)
                         circle_data['value_label'].config(
                             text=value_text,
                             fg=value_color
@@ -676,34 +675,38 @@ class ModernTradingGUI:
             self.token_frames[symbol] = card
 
     def create_token_card(self, symbol):
-        """Crea una tarjeta individual de token con valores numéricos de señales"""
+        """Crea una tarjeta individual de token con símbolo + %24H + precio en misma línea"""
         card = tk.Frame(self.tokens_container, bg=CARD_BG, relief='flat', bd=1,
                     highlightbackground=TEXT_SECONDARY, highlightthickness=1,
                     width=280, height=200)
         card.pack_propagate(False)
         
-        # Header del token
+        # Header del token - TODO EN MISMA LÍNEA
         header = tk.Frame(card, bg=CARD_BG)
         header.pack(fill=tk.X, padx=10, pady=8)
         
-        tk.Label(header, text=symbol.replace("USDC", ""), bg=CARD_BG, fg=ACCENT_COLOR,
-                font=("Arial", 14, "bold")).pack(side=tk.LEFT)
+        # ✅ SÍMBOLO + %24H (izquierda)
+        symbol_change_frame = tk.Frame(header, bg=CARD_BG)
+        symbol_change_frame.pack(side=tk.LEFT)
         
+        # Símbolo y %24H en horizontal
+        symbol_label = tk.Label(symbol_change_frame, text=symbol.replace("USDC", ""), 
+                            bg=CARD_BG, fg=ACCENT_COLOR, font=("Arial", 14, "bold"))
+        symbol_label.pack(side=tk.LEFT)
+        
+        # ✅ %24H AL LADO DEL SÍMBOLO
+        daily_change_header_label = tk.Label(symbol_change_frame, text=" +0.00%", 
+                                        bg=CARD_BG, fg=TEXT_SECONDARY, font=("Arial", 11))
+        daily_change_header_label.pack(side=tk.LEFT, padx=(5, 0))
+        
+        # ✅ PRECIO ACTUAL (derecha)
         price_label = tk.Label(header, text="$0.0000", bg=CARD_BG, fg=TEXT_COLOR,
                             font=("Arial", 12, "bold"))
         price_label.pack(side=tk.RIGHT)
         
-        # Cambio diario del token
-        daily_change_frame = tk.Frame(card, bg=CARD_BG)
-        daily_change_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
-        
-        daily_change_label = tk.Label(daily_change_frame, text="24H: +0.00%", 
-                                bg=CARD_BG, fg=TEXT_SECONDARY, font=("Arial", 9))
-        daily_change_label.pack(anchor="w")
-        
         # Información de balance
         balance_frame = tk.Frame(card, bg=CARD_BG)
-        balance_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
+        balance_frame.pack(fill=tk.X, padx=10, pady=(8, 5))
         
         balance_label = tk.Label(balance_frame, text="0.000000 → $0.00 (0.0%)", 
                                 bg=CARD_BG, fg=TEXT_SECONDARY, font=("Arial", 9))
@@ -713,26 +716,26 @@ class ModernTradingGUI:
         signals_container = tk.Frame(card, bg=CARD_BG)
         signals_container.pack(fill=tk.X, padx=10, pady=8)
         
-        # Crear timeframes en fila horizontal - SOLO 30m, 1h, 2h
+        # Crear timeframes en fila horizontal
         timeframe_frame = tk.Frame(signals_container, bg=CARD_BG)
         timeframe_frame.pack()
         
         circles = {}
-        timeframes = ["30m", "1h", "2h"]  # ← QUITAMOS "1d"
+        timeframes = ["30m", "1h", "2h"]
         
         for i, tf in enumerate(timeframes):
             # Frame individual para cada timeframe
             tf_frame = tk.Frame(timeframe_frame, bg=CARD_BG)
-            tf_frame.pack(side=tk.LEFT, padx=10)  # Más espacio entre ellos
+            tf_frame.pack(side=tk.LEFT, padx=10)
             
-            # Canvas para el círculo (tamaño normal)
+            # Canvas para el círculo
             canvas = tk.Canvas(tf_frame, width=28, height=28, bg=CARD_BG, highlightthickness=0)
             canvas.pack()
             
             # Círculo centrado
             circle_id = canvas.create_oval(4, 4, 24, 24, fill="gray", outline=TEXT_SECONDARY, width=1)
             
-            # Label para el valor numérico DEBAJO del círculo
+            # Label para el valor numérico
             value_label = tk.Label(tf_frame, text="0.00", bg=CARD_BG, fg=TEXT_SECONDARY, 
                                 font=("Arial", 8, "bold"))
             value_label.pack()
@@ -756,19 +759,19 @@ class ModernTradingGUI:
         center_frame = tk.Frame(signal_frame, bg=CARD_BG)
         center_frame.pack(expand=True)
         
-        weight_label = tk.Label(center_frame, text="PESO: 0.00", bg=CARD_BG, fg=WARNING_COLOR,
+        weight_label = tk.Label(center_frame, text="WEIGHT: 0.00", bg=CARD_BG, fg=WARNING_COLOR,
                             font=("Arial", 11, "bold"))
         weight_label.pack(side=tk.LEFT, padx=(0, 10))
         
-        signal_label = tk.Label(center_frame, text="SEÑAL: N/A", bg=CARD_BG, fg=TEXT_SECONDARY,
+        signal_label = tk.Label(center_frame, text="SIGNAL: N/A", bg=CARD_BG, fg=TEXT_SECONDARY,
                             font=("Arial", 10, "bold"))
         signal_label.pack(side=tk.LEFT)
         
-        # Guardar referencias
+        # ✅ Guardar referencias
         card.data = {
             "symbol": symbol,
             "price_label": price_label,
-            "daily_change_label": daily_change_label,
+            "daily_change_header_label": daily_change_header_label,  # ← %24H
             "balance_label": balance_label,
             "circles": circles,
             "weight_label": weight_label,
