@@ -894,34 +894,24 @@ class ModernTradingGUI:
         self.setup_tooltips()
 
     def setup_tooltips(self):
-        """✅ CONFIGURAR TOOLTIPS CON VERIFICACIÓN DE DEBUG LABELS"""
+        """✅ CONFIGURAR TOOLTIPS - VERSIÓN MEJORADA"""
         print("🔧 Configurando tooltips para indicadores...")
         
-        # Verificar que todos los indicadores y debug labels existen
+        # Verificar que todos los indicadores existen
         for section in ['tokens', 'metrics', 'portfolio', 'chart']:
             indicator = self.section_indicators.get(section)
             debug_label = getattr(self, f"{section}_debug_label", None)
             print(f"   ✅ {section}: Indicador={indicator is not None}, DebugLabel={debug_label is not None}")
-        
-        # Tooltip para tokens
-        if hasattr(self, 'tokens_indicator') and self.tokens_indicator:
-            self.tokens_indicator.bind("<Enter>", lambda e: self.show_tooltip(e, 'tokens'))
-            self.tokens_indicator.bind("<Leave>", self.hide_tooltip)
-        
-        # Tooltip para cartera
-        if hasattr(self, 'portfolio_indicator') and self.portfolio_indicator:
-            self.portfolio_indicator.bind("<Enter>", lambda e: self.show_tooltip(e, 'portfolio'))
-            self.portfolio_indicator.bind("<Leave>", self.hide_tooltip)
-        
-        # Tooltip para métricas
-        if hasattr(self, 'metrics_indicator') and self.metrics_indicator:
-            self.metrics_indicator.bind("<Enter>", lambda e: self.show_tooltip(e, 'metrics'))
-            self.metrics_indicator.bind("<Leave>", self.hide_tooltip)
-        
-        # Tooltip para gráfico
-        if hasattr(self, 'chart_indicator') and self.chart_indicator:
-            self.chart_indicator.bind("<Enter>", lambda e: self.show_tooltip(e, 'chart'))
-            self.chart_indicator.bind("<Leave>", self.hide_tooltip)
+            
+            if indicator:
+                # Remover bindings existentes para evitar duplicados
+                indicator.unbind("<Enter>")
+                indicator.unbind("<Leave>")
+                
+                # Configurar nuevos bindings
+                indicator.bind("<Enter>", lambda e, s=section: self.show_tooltip(e, s))
+                indicator.bind("<Leave>", self.hide_tooltip)
+                print(f"   🎯 Tooltip configurado para {section}")
 
     def show_tooltip(self, event, section_name):
         """Mostrar tooltip con última actualización"""
@@ -941,16 +931,32 @@ class ModernTradingGUI:
         """Ocultar tooltip"""
         if hasattr(self, 'tooltip'):
             self.tooltip.destroy()
-    
+
     def update_section_indicator(self, section_name):
-        """✅ ACTUALIZACIÓN DE INDICADOR - VERSIÓN ROBUSTA"""
+        """✅ ACTUALIZACIÓN DE INDICADOR - VERSIÓN THREAD-SAFE"""
         try:
             if self.closing or not hasattr(self, 'root') or not self.root:
                 return
                 
-            # ✅ VERIFICAR QUE TKINTER ESTÉ ACTIVO
+            # ✅ VERIFICAR SI ESTAMOS EN EL HILO PRINCIPAL
             if hasattr(self.root, 'tk') and hasattr(self.root.tk, 'call'):
-                self.root.after(0, self._activate_indicator_simple, section_name)
+                try:
+                    # Intentar una operación simple de Tkinter para verificar el hilo
+                    self.root.tk.call('info', 'exists', '.')
+                    # ✅ ESTAMOS EN HILO PRINCIPAL - ejecutar directamente
+                    self._activate_indicator_simple(section_name)
+                except RuntimeError as e:
+                    if "main thread is not in main loop" in str(e):
+                        # ✅ ESTAMOS EN HILO SECUNDARIO - usar after de forma segura
+                        def safe_activate():
+                            if not self.closing and hasattr(self, 'root') and self.root:
+                                try:
+                                    self._activate_indicator_simple(section_name)
+                                except:
+                                    pass
+                        self.root.after(0, safe_activate)
+                    else:
+                        raise e
             else:
                 print(f"⚠️ Tkinter no disponible para indicador {section_name}")
                 
@@ -958,8 +964,19 @@ class ModernTradingGUI:
             if "main thread is not in main loop" not in str(e):
                 print(f"❌ Error en update_section_indicator {section_name}: {e}")
 
+    def is_main_thread(self):
+        """Verifica si estamos en el hilo principal de Tkinter"""
+        try:
+            if hasattr(self, 'root') and self.root and hasattr(self.root, 'tk'):
+                self.root.tk.call('info', 'exists', '.')
+                return True
+        except RuntimeError as e:
+            if "main thread is not in main loop" in str(e):
+                return False
+        return False
+
     def _activate_indicator_simple(self, section_name):
-        """✅ ACTIVAR INDICADOR - CON DEBUG DETALLADO"""
+        """✅ ACTIVAR INDICADOR - VERSIÓN QUE SÍ FUNCIONA"""
         print(f"🎯 _activate_indicator_simple EJECUTADO para: {section_name}")
         print(f"   Estado: closing={self.closing}")
         
@@ -1002,7 +1019,7 @@ class ModernTradingGUI:
             print(f"   ❌ Indicador no encontrado para: {section_name}")
 
     def _reset_indicator_simple(self, section_name):
-        """✅ RESETEAR INDICADOR - CON DEBUG DETALLADO"""
+        """✅ RESETEAR INDICADOR - VERSIÓN QUE SÍ FUNCIONA"""
         print(f"🎯 _reset_indicator_simple EJECUTADO para: {section_name}")
         
         if self.closing:
@@ -1467,7 +1484,7 @@ class ModernTradingGUI:
         print("🔄 _update_tokens_background INICIADO")
         
         if self.closing or not self.bot:
-            print("   ❌ No se ejecuta: closing={self.closing}, bot={self.bot is not None}")
+            print(f"   ❌ No se ejecuta: closing={self.closing}, bot={self.bot is not None}")
             return
             
         if self.is_updating['tokens']:
@@ -1476,7 +1493,8 @@ class ModernTradingGUI:
             
         self.is_updating['tokens'] = True
         try:
-            print("🎯 LLAMANDO update_section_indicator('tokens')...")
+            # ✅ ACTIVAR INDICADOR - ESTA LÍNEA ES CRÍTICA
+            print("🎯 ACTIVANDO INDICADOR DE TOKENS...")
             self.update_section_indicator('tokens')
             
             symbol_data = {}
@@ -1485,7 +1503,7 @@ class ModernTradingGUI:
             all_symbols = list(self.token_frames.keys())
             print(f"   🔍 Procesando {len(all_symbols)} tokens: {all_symbols}")
             
-            for symbol in all_symbols:  # ← CAMBIAR test_symbols por all_symbols
+            for symbol in all_symbols:
                 try:
                     print(f"   📊 Obteniendo datos para {symbol}...")
                     
@@ -1542,6 +1560,10 @@ class ModernTradingGUI:
             
         self.is_updating['metrics'] = True
         try:
+            # ✅ ACTIVAR INDICADOR  
+            print("🎯 ACTIVANDO INDICADOR DE MÉTRICAS...")
+            self.update_section_indicator('metrics')
+            
             total_balance = self.bot.account.get_balance_usdc()
             
             # ✅ ACTUALIZAR HISTORIAL (RÁPIDO)
@@ -1581,6 +1603,9 @@ class ModernTradingGUI:
         if self.closing or not self.bot:
             return
             
+        # ✅ ACTIVAR INDICADOR
+        self.update_section_indicator('portfolio')
+        
         self.is_updating['portfolio'] = True
         try:
             total_balance = self.bot.account.get_balance_usdc()
@@ -1596,6 +1621,9 @@ class ModernTradingGUI:
         if self.closing:
             return
             
+        # ✅ ACTIVAR INDICADOR
+        self.update_section_indicator('chart')
+        
         self.is_updating['chart'] = True
         try:
             total_balance = self.bot.account.get_balance_usdc() if self.bot else 0
