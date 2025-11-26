@@ -34,17 +34,24 @@ class TradingBot:
         print(f"✅ GUI conectada - Account: {self.account.gui is not None}, Manager: {self.manager.gui is not None}")
     
     def start(self):
-        """✅ INICIAR BOT MANUALMENTE"""
+        """✅ INICIAR BOT CON VERIFICACIÓN DE GUI"""
         if not self.running:
+            # ✅ VERIFICAR QUE LA GUI ESTÉ COMPLETAMENTE CONECTADA
+            if (not hasattr(self, 'gui') or self.gui is None or 
+                not hasattr(self, 'account') or self.account.gui is None or
+                not hasattr(self, 'manager') or self.manager.gui is None):
+                print("❌ Bot no puede iniciar: GUI no completamente conectada")
+                if hasattr(self, 'gui') and self.gui:
+                    self.gui.log_trade("❌ Error: GUI no completamente conectada al bot", 'RED')
+                return
+            
             self.running = True
             self.thread = threading.Thread(target=self.loop, daemon=True)
             self.thread.start()
-            print("🤖 Bot Started")
+            print("🤖 Bot Started - GUI completamente conectada")
             if self.gui: 
-                self.gui.log_trade("🤖 Bot Started", 'GREEN')
-            else:
-                print("⚠️ Bot iniciado sin GUI conectada")
-    
+                self.gui.log_trade("🤖 Bot Started - Sistema operativo", 'GREEN')
+                
     def stop(self):
         """Parada normal"""
         self.running = False

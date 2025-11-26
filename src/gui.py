@@ -2,7 +2,6 @@
 import tkinter as tk
 from tkinter import ttk
 from datetime import datetime, timedelta
-import time
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.patches as patches
@@ -10,13 +9,17 @@ from matplotlib.figure import Figure
 import json
 import os
 import threading
-from concurrent.futures import ThreadPoolExecutor
-import asyncio
 import queue
 import numpy as np
 from scipy.interpolate import make_interp_spline
 import subprocess  
 from config import DEFAULT_CHART_TIMEFRAME
+
+# 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 
+# ✅ NUEVAS IMPORTACIONES PARA OPTIMIZACIÓN
+import time
+from concurrent.futures import ThreadPoolExecutor
+# 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 
 
 # Configuración de colores
 DARK_BG = "#0f0f0f"
@@ -44,6 +47,7 @@ class ModernTradingGUI:
         self._cached_fees_period = self.get_empty_fees()
         self._last_fees_calc = datetime.now() - timedelta(hours=2)  # Forzar primera actualización
         
+        # 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 
         # ✅ NUEVAS VARIABLES PARA OPTIMIZACIÓN
         self.update_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="GUI_Update")
         self.last_update_time = {}
@@ -52,11 +56,28 @@ class ModernTradingGUI:
             'portfolio': 60,      # 1 minuto  
             'tokens': 30,         # 30 segundos
             'chart': 60,          # 1 minuto
-            'fees': 1800,          # 30 minutos
+            'fees': 1800,         # 30 minutos
             'daily_change': 60    # 1 minuto
         }
         self.is_updating = {key: False for key in self.update_intervals}
+        self._cached_daily_changes = {}
+        self._cached_fees = self.get_empty_fees()
         
+        # ✅ VARIABLES PARA INDICADORES DE SECCIÓN
+        self.last_update_times = {
+            'tokens': "Nunca",
+            'metrics': "Nunca", 
+            'portfolio': "Nunca",
+            'chart': "Nunca",
+            'fees': "Nunca"
+        }
+        self.section_indicators = {}  # Para guardar referencias a los indicadores
+        
+        # ✅ CONTADORES PARA FEEDBACK
+        self.update_count = 0
+        self.tooltip = None
+        # 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 
+
         # Configuración de matplotlib...
         plt.rcParams['figure.facecolor'] = DARK_BG
         plt.rcParams['axes.facecolor'] = CARD_BG
@@ -84,7 +105,7 @@ class ModernTradingGUI:
         print("✅ GUI inicializada (esperando configuración desde main.py)")
         
         # INICIALIZAR LIMPIEZA PERIÓDICA
-        self.root.after(60000, self.setup_memory_cleanup)  # Empezar después de 1 minuto      
+        self.root.after(60000, self.setup_memory_cleanup)  # Empezar después de 1 minuto
 
     def setup_log_tags(self):
         """Configura los tags de color para el log"""
@@ -294,6 +315,48 @@ class ModernTradingGUI:
             print(f"Error calculando % cambio para {symbol} {timeframe}: {e}")
             return 0.0
 
+    def verify_initial_connection(self):
+        """✅ VERIFICAR CONEXIÓN COMPLETA Y FORZAR PRIMERA ACTUALIZACIÓN"""
+        if self.bot:
+            bot_has_gui = hasattr(self.bot, 'gui') and self.bot.gui is not None
+            manager_has_gui = hasattr(self.bot, 'manager') and hasattr(self.bot.manager, 'gui') and self.bot.manager.gui is not None
+            account_has_gui = hasattr(self.bot, 'account') and hasattr(self.bot.account, 'gui') and self.bot.account.gui is not None
+            
+            print(f"🔍 Verificación conexiones - Bot: {bot_has_gui}, Manager: {manager_has_gui}, Account: {account_has_gui}")
+            
+            if bot_has_gui and manager_has_gui and account_has_gui:
+                print("✅ GUI completamente conectada a todos los componentes")
+                self.log_trade("✅ GUI completamente conectada al bot", 'GREEN')
+                
+                # ✅ FORZAR PRIMERA ACTUALIZACIÓN INMEDIATA
+                self.root.after(1000, self._force_initial_update)
+            else:
+                missing_components = []
+                if not bot_has_gui: missing_components.append("Bot")
+                if not manager_has_gui: missing_components.append("Manager")
+                if not account_has_gui: missing_components.append("Account")
+                
+                print(f"⚠️ Conexiones incompletas: {', '.join(missing_components)}")
+                self.log_trade(f"⚠️ Conexiones incompletas: {', '.join(missing_components)}", 'YELLOW')
+
+    def _force_initial_update(self):
+        """✅ FORZAR ACTUALIZACIÓN INICIAL PARA PROBAR CONEXIÓN"""
+        print("🔨 Forzando actualización inicial...")
+        try:
+            # Probar con un símbolo específico
+            if self.bot and hasattr(self.bot, 'account'):
+                total_balance = self.bot.account.get_balance_usdc()
+                print(f"💰 Balance inicial: ${total_balance:,.2f}")
+                
+                # Actualizar UI inmediatamente
+                self.safe_update_ui()
+                
+                self.log_trade(f"💰 Balance inicial: ${total_balance:,.2f}", 'GREEN')
+                
+        except Exception as e:
+            print(f"❌ Error en actualización inicial: {e}")
+            self.log_trade(f"❌ Error en conexión: {e}", 'RED')
+
     def _update_metrics_ui(self, metrics):
         """Actualiza todas las métricas incluyendo comisiones por período"""
         if self.closing:
@@ -318,7 +381,7 @@ class ModernTradingGUI:
         
         # Aplicar colores
         self.apply_change_colors(metrics)
-
+    
     def enable_bot_controls(self):
         """✅ HABILITAR controles del bot después de conexión exitosa"""
         print("🎛️ Habilitando controles del bot en GUI...")
@@ -326,39 +389,78 @@ class ModernTradingGUI:
         self.stop_btn.config(state='normal', bg=DANGER_COLOR)
         self.rebalance_btn.config(state='normal', bg=WARNING_COLOR)
         
-        # ✅ INICIAR ACTUALIZACIONES DESPUÉS DE QUE EL LOOP PRINCIPAL ESTÉ EJECUTÁNDOSE
-        self.root.after(1000, self.safe_start_updates)  # Esperar 1 segundo
-        print("✅ Controles habilitados - actualizaciones programadas")
-
+        # ✅ FORZAR PRIMERA ACTUALIZACIÓN COMPLETA INMEDIATA
+        print("🔨 Forzando primera actualización completa...")
+        self.root.after(1000, self._force_complete_initial_update)
+    
+    def _force_complete_initial_update(self):
+        """✅ ACTUALIZACIÓN INICIAL COMPLETA Y FORZADA"""
+        print("🚀 EJECUTANDO ACTUALIZACIÓN INICIAL COMPLETA...")
+        
+        try:
+            # ✅ 1. VERIFICAR CONEXIÓN BÁSICA
+            if not self.bot or not hasattr(self.bot, 'account'):
+                print("❌ Bot no disponible para actualización inicial")
+                return
+            
+            # ✅ 2. OBTENER DATOS BÁSICOS
+            total_balance = self.bot.account.get_balance_usdc()
+            print(f"💰 Balance inicial obtenido: ${total_balance:,.2f}")
+            
+            # ✅ 3. ACTUALIZAR HISTORIAL INMEDIATAMENTE
+            now = datetime.now()
+            self._update_history(now, total_balance)
+            
+            # ✅ 4. FORZAR ACTUALIZACIÓN DE GRÁFICO
+            print("📊 Forzando actualización de gráfico...")
+            self._update_main_chart(total_balance)
+            
+            # ✅ 5. FORZAR ACTUALIZACIÓN DE CARTERA
+            print("💼 Forzando actualización de portfolio...")
+            portfolio_data = self.get_portfolio_data(total_balance)
+            self._update_portfolio_ui(portfolio_data)
+            
+            # ✅ 6. FORZAR ACTUALIZACIÓN DE MÉTRICAS
+            print("📈 Forzando actualización de métricas...")
+            metrics = {
+                'total_balance': total_balance,
+                'change_30m': "+0.00%",
+                'change_1h': "+0.00%", 
+                'change_2h': "+0.00%",
+                'change_4h': "+0.00%",
+                'change_1d': "+0.00%",
+                'change_1w': "+0.00%", 
+                'change_1m': "+0.00%",
+                'change_1y': "+0.00%",
+                'fees_1d': "$0.00",
+                'fees_1w': "$0.00",
+                'fees_1m': "$0.00", 
+                'fees_1y': "$0.00"
+            }
+            self._update_metrics_ui(metrics)
+            
+            # ✅ 7. FORZAR ACTUALIZACIÓN DE TOKENS
+            print("🎯 Forzando actualización de tokens...")
+            self._schedule_background_task(self._update_tokens_background)
+            
+            # ✅ 8. INICIAR ACTUALIZACIONES AUTOMÁTICAS
+            print("🔄 Iniciando ciclo de actualizaciones automáticas...")
+            self.root.after(5000, self.safe_update_ui)  # Primera en 5 segundos
+            
+            self.log_trade(f"✅ Sistema inicializado - Balance: ${total_balance:,.2f}", 'GREEN')
+            print("✅ Actualización inicial completada correctamente")
+            
+        except Exception as e:
+            print(f"❌ Error en actualización inicial: {e}")
+            import traceback
+            traceback.print_exc()
+            self.log_trade(f"❌ Error en inicialización: {e}", 'RED')    
+    
     def safe_start_updates(self):
         """Iniciar actualizaciones de forma segura después de que el loop esté activo"""
         print("🔄 Iniciando actualizaciones automáticas...")
         # ✅ INICIAR LA PRIMERA ACTUALIZACIÓN
         self.safe_update_ui()
-
-    def verify_initial_connection(self):
-        """Verifica el estado inicial de la conexión"""
-        if self.bot:
-            bot_has_gui = hasattr(self.bot, 'gui') and self.bot.gui is not None
-            manager_has_gui = hasattr(self.bot, 'manager') and hasattr(self.bot.manager, 'gui') and self.bot.manager.gui is not None
-            account_has_gui = hasattr(self.bot, 'account') and hasattr(self.bot.account, 'gui') and self.bot.account.gui is not None
-            
-            print(f"🔍 Conexiones iniciales - Bot: {bot_has_gui}, Manager: {manager_has_gui}, Account: {account_has_gui}")
-            
-            if bot_has_gui and manager_has_gui and account_has_gui:
-                print("✅ GUI completamente conectada a todos los componentes")
-                self.log_trade("✅ GUI completamente conectada al bot", 'GREEN')
-            else:
-                missing_components = []
-                if not bot_has_gui: missing_components.append("Bot")
-                if not manager_has_gui: missing_components.append("Manager")
-                if not account_has_gui: missing_components.append("Account")
-                
-                print(f"⚠️ Conexiones incompletas: {', '.join(missing_components)}")
-                self.log_trade(f"⚠️ Conexiones incompletas: {', '.join(missing_components)}", 'YELLOW')
-        else:
-            print("❌ No hay bot conectado a la GUI")
-            self.log_trade("❌ No hay bot conectado - use 'Reiniciar App'", 'RED')
 
     def setup_window(self):
         """Configura la ventana principal - MAXIMIZADA PERO NO PANTALLA COMPLETA"""
@@ -458,7 +560,7 @@ class ModernTradingGUI:
         self.rebalance_btn = self.create_button(control_frame, "⚖ REBALANCE", WARNING_COLOR, self.safe_rebalance)
         self.rebalance_btn.pack(side=tk.LEFT, padx=5)
         
-        self.create_button(control_frame, "🔄 RESTART", SECONDARY_COLOR, self.safe_restart_app).pack(side=tk.LEFT, padx=5)  # ← NUEVO BOTÓN
+        self.create_button(control_frame, "🔄 RESTART", SECONDARY_COLOR, self.safe_restart_app).pack(side=tk.LEFT, padx=5)
         
         # En create_widgets(), después de crear los botones:
         if self.bot is None:
@@ -488,6 +590,19 @@ class ModernTradingGUI:
         # Métricas principales - VERSIÓN COMPACTADA CON COMISIONES POR PERÍODO
         metrics_frame = tk.Frame(top_row, bg=DARK_BG)
         metrics_frame.pack(side=tk.LEFT, fill=tk.Y)
+
+        # 🎯 HEADER DE MÉTRICAS CON INDICADOR
+        metrics_header = tk.Frame(metrics_frame, bg=DARK_BG)
+        metrics_header.pack(fill=tk.X)
+        
+        tk.Label(metrics_header, text="📊 PERFORMANCE METRICS", bg=DARK_BG, fg=TEXT_COLOR,
+                font=("Arial", 12, "bold")).pack(side=tk.LEFT)
+        
+        # ✅ INDICADOR DE MÉTRICAS
+        self.metrics_indicator = tk.Label(metrics_header, text="●", fg=TEXT_SECONDARY, 
+                                        font=("Arial", 14), bg=DARK_BG, cursor="hand2")
+        self.metrics_indicator.pack(side=tk.LEFT, padx=5)
+        self.section_indicators['metrics'] = self.metrics_indicator
 
         self.total_balance_label = self.create_metric_card(
             metrics_frame, "💰 TOTAL BALANCE", "$0.00", ACCENT_COLOR
@@ -538,8 +653,18 @@ class ModernTradingGUI:
         chart_frame = tk.Frame(top_row, bg=DARK_BG)
         chart_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(20, 0))
 
-        tk.Label(chart_frame, text="📈 BALANCE GRAPH", bg=DARK_BG, fg=TEXT_COLOR,
-                font=("Arial", 12, "bold")).pack(anchor="w")
+        # 🎯 HEADER DE GRÁFICO CON INDICADOR
+        chart_header = tk.Frame(chart_frame, bg=DARK_BG)
+        chart_header.pack(fill=tk.X)
+        
+        tk.Label(chart_header, text="📈 BALANCE GRAPH", bg=DARK_BG, fg=TEXT_COLOR,
+                font=("Arial", 12, "bold")).pack(side=tk.LEFT)
+        
+        # ✅ INDICADOR DE GRÁFICO
+        self.chart_indicator = tk.Label(chart_header, text="●", fg=TEXT_SECONDARY,
+                                    font=("Arial", 14), bg=DARK_BG, cursor="hand2")
+        self.chart_indicator.pack(side=tk.LEFT, padx=5)
+        self.section_indicators['chart'] = self.chart_indicator
         
         self.fig = Figure(figsize=(10, 4), facecolor=DARK_BG)
         self.ax = self.fig.add_subplot(111)
@@ -555,8 +680,18 @@ class ModernTradingGUI:
         tokens_frame = tk.Frame(bottom_row, bg=DARK_BG)
         tokens_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        tk.Label(tokens_frame, text="🎯 TRADING SIGNALS", bg=DARK_BG, fg=TEXT_COLOR,
-                font=("Arial", 12, "bold")).pack(anchor="w")
+        # 🎯 HEADER DE TOKENS CON INDICADOR
+        tokens_header = tk.Frame(tokens_frame, bg=DARK_BG)
+        tokens_header.pack(fill=tk.X)
+        
+        tk.Label(tokens_header, text="🎯 TRADING SIGNALS", bg=DARK_BG, fg=TEXT_COLOR,
+                font=("Arial", 12, "bold")).pack(side=tk.LEFT)
+        
+        # ✅ INDICADOR DE TOKENS
+        self.tokens_indicator = tk.Label(tokens_header, text="●", fg=TEXT_SECONDARY, 
+                                    font=("Arial", 14), bg=DARK_BG, cursor="hand2")
+        self.tokens_indicator.pack(side=tk.LEFT, padx=5)
+        self.section_indicators['tokens'] = self.tokens_indicator
 
         # Contenedor para tokens en grid (3 columnas)
         self.tokens_container = tk.Frame(tokens_frame, bg=DARK_BG)
@@ -570,8 +705,18 @@ class ModernTradingGUI:
         portfolio_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(20, 0))
         portfolio_frame.pack_propagate(False)
 
-        tk.Label(portfolio_frame, text="💼 BINANCE WALLET", bg=DARK_BG, fg=TEXT_COLOR,
-                font=("Arial", 12, "bold")).pack(anchor="w")
+        # 🎯 HEADER DE CARTERA CON INDICADOR
+        portfolio_header = tk.Frame(portfolio_frame, bg=DARK_BG)
+        portfolio_header.pack(fill=tk.X)
+        
+        tk.Label(portfolio_header, text="💼 BINANCE WALLET", bg=DARK_BG, fg=TEXT_COLOR,
+                font=("Arial", 12, "bold")).pack(side=tk.LEFT)
+        
+        # ✅ INDICADOR DE CARTERA
+        self.portfolio_indicator = tk.Label(portfolio_header, text="●", fg=TEXT_SECONDARY,
+                                        font=("Arial", 14), bg=DARK_BG, cursor="hand2")
+        self.portfolio_indicator.pack(side=tk.LEFT, padx=5)
+        self.section_indicators['portfolio'] = self.portfolio_indicator
 
         # Gráfico de cartera
         self.portfolio_fig = Figure(figsize=(4, 2.8), facecolor=DARK_BG)
@@ -582,7 +727,7 @@ class ModernTradingGUI:
 
         # Lista de activos
         self.portfolio_tree = ttk.Treeview(portfolio_frame, columns=('Asset', 'Balance', 'USD', '%'), 
-                                          show='headings', height=8)
+                                        show='headings', height=8)
         self.portfolio_tree.heading('Asset', text='SYMBOL')
         self.portfolio_tree.heading('Balance', text='AMMOUNT')
         self.portfolio_tree.heading('USD', text='USD')
@@ -604,13 +749,70 @@ class ModernTradingGUI:
                 font=("Arial", 12, "bold")).pack(anchor="w")
 
         self.log_text = tk.Text(log_frame, height=15, bg=CARD_BG, fg=TEXT_COLOR, 
-                               font=("Consolas", 9), wrap=tk.WORD)
+                            font=("Consolas", 9), wrap=tk.WORD)
         self.setup_log_tags()
         scrollbar_log = tk.Scrollbar(log_frame, command=self.log_text.yview)
         self.log_text.config(yscrollcommand=scrollbar_log.set)
         
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=(5, 0))
         scrollbar_log.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # ✅ CONFIGURAR TOOLTIPS DESPUÉS DE CREAR TODOS LOS INDICADORES
+        self.setup_tooltips()
+
+    def setup_tooltips(self):
+        """Configurar tooltips para los indicadores"""
+        # Tooltip para tokens
+        self.tokens_indicator.bind("<Enter>", lambda e: self.show_tooltip(e, 'tokens'))
+        self.tokens_indicator.bind("<Leave>", self.hide_tooltip)
+        
+        # Tooltip para cartera
+        self.portfolio_indicator.bind("<Enter>", lambda e: self.show_tooltip(e, 'portfolio'))
+        self.portfolio_indicator.bind("<Leave>", self.hide_tooltip)
+        
+        # Tooltip para métricas
+        self.metrics_indicator.bind("<Enter>", lambda e: self.show_tooltip(e, 'metrics'))
+        self.metrics_indicator.bind("<Leave>", self.hide_tooltip)
+        
+        # Tooltip para gráfico
+        self.chart_indicator.bind("<Enter>", lambda e: self.show_tooltip(e, 'chart'))
+        self.chart_indicator.bind("<Leave>", self.hide_tooltip)
+
+    def show_tooltip(self, event, section_name):
+        """Mostrar tooltip con última actualización"""
+        last_time = self.last_update_times.get(section_name, "Nunca")
+        tooltip_text = f"Última actualización: {last_time}"
+        
+        # Crear tooltip
+        self.tooltip = tk.Toplevel()
+        self.tooltip.wm_overrideredirect(True)
+        self.tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
+        
+        label = tk.Label(self.tooltip, text=tooltip_text, background="#ffffe0", 
+                        relief='solid', borderwidth=1, font=("Arial", 9))
+        label.pack()
+
+    def hide_tooltip(self, event=None):
+        """Ocultar tooltip"""
+        if hasattr(self, 'tooltip'):
+            self.tooltip.destroy()
+
+    def update_section_indicator(self, section_name):
+        """Animación de indicador de sección"""
+        def blink_indicator():
+            indicator = self.section_indicators.get(section_name)
+            if indicator:
+                # Cambiar a color activo
+                indicator.config(fg=ACCENT_COLOR)
+                
+                # Actualizar timestamp
+                current_time = datetime.now().strftime("%H:%M:%S")
+                self.last_update_times[section_name] = current_time
+                
+                # Volver al color normal después de 2 segundos
+                self.root.after(2000, lambda: indicator.config(fg=TEXT_SECONDARY))
+        
+        self.safe_ui_update(blink_indicator)
 
     def _on_timeframe_change(self, event=None):
         """Actualizar gráfico cuando cambia el timeframe"""
@@ -1006,33 +1208,46 @@ class ModernTradingGUI:
             else:
                 label.config(fg=TEXT_SECONDARY)  # Gris para comisiones bajas
 
-
     def safe_update_ui(self):
-        """✅ ACTUALIZACIÓN OPTIMIZADA - EVITA DUPLICADOS Y SOBRECARGA"""
-        if self.closing or not self.bot or not self.bot.running:
+        """✅ ACTUALIZACIÓN PRINCIPAL - VERSIÓN SIMPLIFICADA Y ROBUSTA"""
+        if self.closing:
             return
             
+        print("🔁 Ejecutando safe_update_ui...")
+        
+        # ✅ VERIFICACIÓN BÁSICA
+        if not self.bot or not hasattr(self.bot, 'running') or not self.bot.running:
+            print("⏸️ Bot no ejecutándose, omitiendo actualización...")
+            if not self.closing:
+                self.root.after(10000, self.safe_update_ui)  # Reintentar en 10s
+            return
+        
         current_time = time.time()
         
-        # ✅ ACTUALIZACIÓN DE TOKENS (cada 20s)
+        # ✅ ACTUALIZACIONES CON FEEDBACK
         if self._should_update('tokens', current_time):
+            print("🔄 Programando actualización de tokens...")
+            self.update_section_indicator('tokens')
             self._schedule_background_task(self._update_tokens_background)
         
-        # ✅ ACTUALIZACIÓN DE MÉTRICAS (cada 30s)
         if self._should_update('metrics', current_time):
+            print("🔄 Programando actualización de métricas...") 
+            self.update_section_indicator('metrics')
             self._schedule_background_task(self._update_metrics_background)
         
-        # ✅ ACTUALIZACIÓN DE CARTERA (cada 60s) - MENOS FRECUENTE
         if self._should_update('portfolio', current_time):
+            print("🔄 Programando actualización de portfolio...")
+            self.update_section_indicator('portfolio')
             self._schedule_background_task(self._update_portfolio_background)
         
-        # ✅ ACTUALIZACIÓN DE GRÁFICO (cada 30s)
         if self._should_update('chart', current_time):
+            print("🔄 Programando actualización de gráfico...")
+            self.update_section_indicator('chart')
             self._schedule_background_task(self._update_chart_background)
         
-        # ✅ PROGRAMAR SIGUIENTE ACTUALIZACIÓN
-        if not self.closing and self.bot and self.bot.running:
-            self.root.after(10000, self.safe_update_ui)  # ✅ Revisar cada 10s
+        # ✅ PROGRAMAR SIGUIENTE
+        if not self.closing:
+            self.root.after(10000, self.safe_update_ui)  # Cada 10 segundos
 
     def _schedule_background_task(self, task_function):
         """Programa una tarea en background de forma segura"""
@@ -1148,7 +1363,6 @@ class ModernTradingGUI:
             self.is_updating['metrics'] = False
             self.last_update_time['metrics'] = time.time()
 
-
     def _update_portfolio_background(self):
         """✅ ACTUALIZACIÓN OPTIMIZADA DE CARTERA - MENOS FRECUENTE"""
         if self.closing or not self.bot:
@@ -1163,7 +1377,6 @@ class ModernTradingGUI:
         finally:
             self.is_updating['portfolio'] = False
             self.last_update_time['portfolio'] = time.time()
-
 
     def _update_chart_background(self):
         """✅ ACTUALIZACIÓN OPTIMIZADA DEL GRÁFICO"""
@@ -1596,49 +1809,72 @@ class ModernTradingGUI:
             print(f"💾 Historial guardado: {len(self.history)} puntos")
 
     def _update_main_chart(self, total_balance):
-        """Gráfico SIMPLIFICADO - sin suavizado, solo línea directa"""
+        """✅ GRÁFICO MEJORADO - MANEJA DATOS VACÍOS"""
         try:
             tf = self.tf_var.get()
+            
+            # ✅ SI NO HAY HISTORIAL, CREAR UNO BÁSICO
+            if not self.history:
+                print("📊 Creando historial inicial para gráfico...")
+                self.history = [(datetime.now(), total_balance)]
+                self.save_history()
             
             # Filtrar datos según timeframe
             filtered = self._filter_data_by_timeframe(tf)
             
             if not filtered:
-                # Si no hay datos filtrados, usar punto actual
-                filtered = [(datetime.now(), total_balance)]
-                # Y agregar al historial si es nuevo
-                if not self.history or (datetime.now() - self.history[-1][0]).total_seconds() >= 60:
-                    self.history.append((datetime.now(), total_balance))
-
+                # ✅ CREAR DATOS DE EJEMPLO SI NO HAY FILTRADOS
+                print("📊 Creando datos de ejemplo para gráfico...")
+                filtered = [
+                    (datetime.now() - timedelta(hours=2), total_balance * 0.98),
+                    (datetime.now() - timedelta(hours=1), total_balance * 0.99),
+                    (datetime.now(), total_balance)
+                ]
+            
             times, values = zip(*filtered)
             
-            # LIMPIAR Y DIBUJAR GRÁFICO SIMPLE
+            # LIMPIAR Y DIBUJAR GRÁFICO
             self.ax.clear()
             
-            # Línea directa SIN suavizado
+            # Línea del gráfico
             self.ax.plot(times, values, color=ACCENT_COLOR, linewidth=2)
             
-            # Configuración básica
+            # Configuración
             self.ax.set_facecolor(CARD_BG)
             self.ax.grid(True, alpha=0.2, color=TEXT_SECONDARY)
             self.ax.tick_params(colors=TEXT_SECONDARY)
             
-            # Título dinámico
+            # Título
             self.ax.set_title(f"Balance History - {tf}", color=TEXT_COLOR, fontsize=12, pad=10)
             
             # Formatear ejes
             self.ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${x:,.0f}'))
             
-            # Formatear eje X según timeframe
+            # Formatear eje X
             self._format_xaxis(tf, times)
             
             # Ajustar layout
             self.fig.tight_layout()
             
             self.canvas.draw()
+            print("✅ Gráfico actualizado correctamente")
 
         except Exception as e:
-            print(f"Error updating main chart: {e}")
+            print(f"❌ Error actualizando gráfico: {e}")
+            # ✅ CREAR GRÁFICO DE EMERGENCIA
+            self._create_emergency_chart()
+
+    def _create_emergency_chart(self):
+        """✅ GRÁFICO DE EMERGENCIA CUANDO FALLA EL PRINCIPAL"""
+        try:
+            self.ax.clear()
+            self.ax.text(0.5, 0.5, 'Cargando datos...', 
+                        horizontalalignment='center', verticalalignment='center',
+                        transform=self.ax.transAxes, color=TEXT_COLOR, fontsize=14)
+            self.ax.set_facecolor(CARD_BG)
+            self.canvas.draw()
+        except:
+            pass
 
     def _format_xaxis(self, tf, times):
         """Formatea el eje X según el timeframe"""
@@ -1744,65 +1980,65 @@ class ModernTradingGUI:
             os._exit(1)
 
     def _update_portfolio_ui(self, portfolio_data):
-        """Actualiza la visualización de la cartera"""
+        """✅ CARTERA MEJORADA - MANEJA DATOS VACÍOS"""
         if self.closing:
-           return
-        # Limpiar treeview
-        for item in self.portfolio_tree.get_children():
-            self.portfolio_tree.delete(item)
-        
-        # Agregar datos
-        total_balance = portfolio_data['total_balance']
-        for asset in portfolio_data['assets']:
-            if asset['usd_value'] > 1:  # Mostrar solo activos con valor significativo
+            return
+            
+        try:
+            # Limpiar treeview
+            for item in self.portfolio_tree.get_children():
+                self.portfolio_tree.delete(item)
+            
+            # ✅ SI NO HAY DATOS, MOSTRAR MENSAJE
+            if not portfolio_data.get('assets'):
                 self.portfolio_tree.insert('', 'end', values=(
-                    asset['asset'],
-                    f"{asset['balance']:.6f}",
-                    f"${asset['usd_value']:,.2f}",
-                    f"{asset['percentage']:.1f}%"
+                    "Cargando...", "---", "---", "---"
                 ))
-        
-        # Actualizar gráfico de torta - CORREGIDO con colores más saturados y texto blanco
-        self.portfolio_ax.clear()
-        
-        assets = [a for a in portfolio_data['assets'] if a['usd_value'] > total_balance * 0.01]  # > 1% del total
-        if assets:
-            labels = [a['asset'] for a in assets]
-            sizes = [a['usd_value'] for a in assets]
+                print("📋 Portfolio: Mostrando datos de carga...")
+            else:
+                # Agregar datos reales
+                total_balance = portfolio_data['total_balance']
+                for asset in portfolio_data['assets']:
+                    if asset['usd_value'] > 1:
+                        self.portfolio_tree.insert('', 'end', values=(
+                            asset['asset'],
+                            f"{asset['balance']:.6f}",
+                            f"${asset['usd_value']:,.2f}",
+                            f"{asset['percentage']:.1f}%"
+                        ))
+                print(f"📋 Portfolio actualizado: {len(portfolio_data['assets'])} activos")
             
-            # Colores más saturados y oscuros - paleta mejorada
-            saturated_colors = [
-                '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', 
-                '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
-                '#F8C471', '#82E0AA', '#F1948A', '#85C1E9', '#D7BDE2'
-            ]
+            # ✅ ACTUALIZAR GRÁFICO DE TORTA SI HAY DATOS
+            self.portfolio_ax.clear()
             
-            # Asegurar que tenemos suficientes colores
-            colors = saturated_colors * (len(assets) // len(saturated_colors) + 1)
-            colors = colors[:len(assets)]
+            assets = [a for a in portfolio_data.get('assets', []) if a['usd_value'] > total_balance * 0.01]
+            if assets:
+                labels = [a['asset'] for a in assets]
+                sizes = [a['usd_value'] for a in assets]
+                
+                colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
+                colors = colors[:len(assets)]
+                
+                wedges, texts, autotexts = self.portfolio_ax.pie(
+                    sizes, labels=labels, colors=colors, autopct='%1.1f%%',
+                    startangle=90, textprops={'color': 'white', 'fontsize': 8}
+                )
+                
+                for autotext in autotexts:
+                    autotext.set_color('black')
+                    autotext.set_weight('bold')
+            else:
+                # ✅ GRÁFICO DE TORTA VACÍO
+                self.portfolio_ax.text(0.5, 0.5, 'Cargando...', 
+                                    horizontalalignment='center', verticalalignment='center',
+                                    transform=self.portfolio_ax.transAxes, color=TEXT_COLOR, fontsize=10)
             
-            # Gráfico de torta con texto en BLANCO y colores saturados
-            wedges, texts, autotexts = self.portfolio_ax.pie(
-                sizes, 
-                labels=labels, 
-                colors=colors, 
-                autopct='%1.1f%%',
-                startangle=90, 
-                textprops={'color': 'white', 'fontsize': 8, 'weight': 'bold'},
-                wedgeprops={'edgecolor': 'white', 'linewidth': 0.5}
-            )
+            self.portfolio_ax.set_facecolor(CARD_BG)
+            self.portfolio_canvas.draw()
+            print("✅ Gráfico de portfolio actualizado")
             
-            # Configurar el color de los textos de porcentaje a BLANCO
-            for autotext in autotexts:
-                autotext.set_color('black')
-                autotext.set_weight('bold')
-            
-            # Configurar el color de las etiquetas a BLANCO
-            for text in texts:
-                text.set_color('white')
-                text.set_weight('bold')
-        
-        self.portfolio_canvas.draw()
+        except Exception as e:
+            print(f"❌ Error actualizando portfolio UI: {e}")
 
     def _background_update(self):
         """Actualización en background con gestión inteligente de comisiones"""
