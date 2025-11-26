@@ -99,7 +99,10 @@ class CapitalManager:
                         
                         # ✅ EJECUTAR COMPRA CON MONTO AJUSTADO
                         success, msg = self.account.buy_market(symbol, diff_usd)
-                        if (success == False):
+                        if success:
+                            if self.gui:
+                                self.gui.force_token_update(symbol)
+                        else:
                             error_msg = f"❌ ERROR COMPRA {symbol}: {msg}"
                             actions.append(error_msg)
                             if self.gui:
@@ -108,7 +111,10 @@ class CapitalManager:
                         # VENTA
                         quantity = abs(diff_usd) / price
                         success, msg = self.account.sell_market(symbol, quantity)
-                        if (success == False):
+                        if success:
+                            if self.gui:
+                                self.gui.force_token_update(symbol)
+                        else:
                             error_msg = f"❌ ERROR VENTA {symbol}: {msg}"
                             actions.append(error_msg)
                             if self.gui:

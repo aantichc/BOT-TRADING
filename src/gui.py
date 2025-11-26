@@ -600,7 +600,7 @@ class ModernTradingGUI:
 
         # Lista de activos
         self.portfolio_tree = ttk.Treeview(portfolio_frame, columns=('Asset', 'Balance', 'USD', '%'), 
-                                          show='headings', height=8)
+                                          show='headings', height=6)
         self.portfolio_tree.heading('Asset', text='SYMBOL')
         self.portfolio_tree.heading('Balance', text='AMMOUNT')
         self.portfolio_tree.heading('USD', text='USD')
@@ -1276,6 +1276,38 @@ class ModernTradingGUI:
             print(f"❌ Error cálculo comisiones: {e}")
             return self.get_empty_fees()
 
+    def force_token_update(self, symbol):
+        """Actualización inmediata de un token específico"""
+        try:
+            # Obtener datos frescos del token
+            signals = self.bot.manager.get_signals(symbol)
+            weight = self.bot.manager.calculate_weight(signals)
+            price = self.bot.account.get_current_price(symbol)
+            balance = self.bot.account.get_symbol_balance(symbol)
+            usd_value = balance * price
+            total_balance = self.bot.account.get_balance_usdc()
+            pct = (usd_value / total_balance * 100) if total_balance > 0 else 0
+            
+            # Obtener cambio diario
+            daily_changes = self.calculate_all_tokens_daily_change()
+            daily_change = daily_changes.get(symbol, "+0.00%")
+            
+            # Actualizar UI inmediatamente
+            symbol_data = {
+                symbol: {
+                    'signals': signals,
+                    'weight': weight,
+                    'price': price,
+                    'balance': balance,
+                    'usd': usd_value,
+                    'pct': pct,
+                    'daily_change': daily_change
+                }
+            }
+            self._update_token_ui(symbol_data)
+            
+        except Exception as e:
+            print(f"Error en actualización inmediata de {symbol}: {e}")
 
     def get_empty_fees(self):
         """Retorna estructura vacía de comisiones"""
