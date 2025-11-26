@@ -173,9 +173,9 @@ class ModernTradingGUI:
                 self.root.after(20000, self.safe_update_ui)  # Aumentar a 20 segundos
             else:
                 self.root.after(2000, self.process_data_queue)  # 2 segundos
- 
+
     def _update_token_ui(self, symbol_data):
-        """Actualiza la UI de tokens con cambio diario - VERSIÓN COMPLETA CORREGIDA"""
+        """Actualiza la UI de tokens - círculos con señales OO, valores con % cambio"""
         for symbol, data in symbol_data.items():
             if symbol in self.token_frames:
                 frame_data = self.token_frames[symbol].data
@@ -183,12 +183,10 @@ class ModernTradingGUI:
                     # Actualizar precio
                     frame_data["price_label"].config(text=f"${data['price']:,.4f}")
                     
-                    # ✅ ACTUALIZAR CAMBIO DIARIO CON COLORES (CORREGIDO)
+                    # Actualizar cambio diario
                     daily_change_str = data.get('daily_change', '+0.00%')
                     
-                    # Asegurar que es un string y extraer el valor numérico
                     if isinstance(daily_change_str, str):
-                        # Remover + y % para obtener el valor numérico
                         change_value_str = daily_change_str.strip('+%')
                         try:
                             daily_change_value = float(change_value_str)
@@ -199,11 +197,11 @@ class ModernTradingGUI:
                         daily_change_str = "+0.00%"
                     
                     if daily_change_value > 0:
-                        change_color = ACCENT_COLOR  # Verde
+                        change_color = ACCENT_COLOR
                     elif daily_change_value < 0:
-                        change_color = DANGER_COLOR  # Rojo
+                        change_color = DANGER_COLOR
                     else:
-                        change_color = TEXT_SECONDARY  # Gris
+                        change_color = TEXT_SECONDARY
                     
                     frame_data["daily_change_label"].config(
                         text=f"24H: {daily_change_str}",
@@ -215,21 +213,47 @@ class ModernTradingGUI:
                         text=f"{data['balance']:.6f} → ${data['usd']:,.2f} ({data['pct']:.1f}%)"
                     )
                     
-                    # Actualizar círculos de timeframes
+                    # ✅ CÍRCULOS CON SEÑALES OO + VALORES CON % CAMBIO
                     for tf, circle_data in frame_data["circles"].items():
+                        # COLOR DEL CÍRCULO: Basado en señal OO (como antes)
                         color = "gray"  # Por defecto
                         if tf in data['signals']:
                             signal = data['signals'][tf]
                             color = "#00ff00" if signal == "GREEN" else "#ffff00" if signal == "YELLOW" else "#ff4444"
                         
-                        # Actualizar el color del círculo usando el canvas y circle_id
+                        # Actualizar color del círculo (SEÑAL OO)
                         circle_data['canvas'].itemconfig(circle_data['circle_id'], fill=color)
+                        
+                        # ✅ VALOR NUMÉRICO: % de cambio de precio
+                        percent_change = self.get_price_change_percentage(symbol, tf)
+                        
+                        # Color del valor basado en % cambio
+                        if percent_change > 0.5:
+                            value_color = "#00ff00"  # Verde para cambios positivos fuertes
+                        elif percent_change > 0.1:
+                            value_color = "#00ff00"  # Verde para cambios positivos
+                        elif percent_change > -0.1:
+                            value_color = "#ffff00"  # Amarillo para cambios neutros
+                        elif percent_change > -0.5:
+                            value_color = "#ff4444"  # Rojo para cambios negativos
+                        else:
+                            value_color = "#ff4444"  # Rojo para cambios negativos fuertes
+                        
+                        # Formatear el texto del valor
+                        sign = "+" if percent_change > 0 else ""
+                        value_text = f"{sign}{percent_change:.1f}%"
+                        
+                        # Actualizar valor numérico (% CAMBIO)
+                        circle_data['value_label'].config(
+                            text=value_text,
+                            fg=value_color
+                        )
                     
-                    # Actualizar peso y señal general
+                    # Actualizar peso y señal general (basado en señales OO)
                     weight = data['weight']
                     if weight >= 0.8:
                         weight_color = "#00ff00"
-                        signal_text = "FSTRONG BUY"
+                        signal_text = "STRONG BUY"
                     elif weight >= 0.5:
                         weight_color = "#ffff00"
                         signal_text = "BUY"
@@ -241,16 +265,54 @@ class ModernTradingGUI:
                         signal_text = "STRONG SELL"
                     
                     frame_data["weight_label"].config(
-                        text=f"PESO: {weight:.2f}", 
+                        text=f"WEIGHT: {weight:.2f}", 
                         fg=weight_color
                     )
                     frame_data["signal_label"].config(
-                        text=f"SEÑAL: {signal_text}",
+                        text=f"SIGNAL: {signal_text}",
                         font=("Arial", 9)
                     )
                     
                 except Exception as e:
                     print(f"Error updating {symbol} UI: {e}")
+
+    def get_price_change_percentage(self, symbol, timeframe):
+        """Calcula el % de cambio de precio para un timeframe específico"""
+        try:
+            # Mapear timeframe a parámetros de Binance
+            tf_map = {
+                "30m": "30m",
+                "1h": "1h", 
+                "2h": "2h"
+            }
+            
+            if timeframe not in tf_map:
+                return 0.0
+                
+            # Obtener klines para el timeframe
+            klines = self.bot.client.get_klines(
+                symbol=symbol, 
+                interval=tf_map[timeframe],
+                limit=2  # Solo necesitamos 2 velas: actual y anterior
+            )
+            
+            if len(klines) < 2:
+                return 0.0
+                
+            # Precio de cierre actual y anterior
+            current_close = float(klines[-1][4])  # Última vela, precio de cierre
+            previous_close = float(klines[-2][4]) # Vela anterior, precio de cierre
+            
+            # Calcular % de cambio
+            if previous_close == 0:
+                return 0.0
+                
+            percent_change = ((current_close - previous_close) / previous_close) * 100
+            return percent_change
+            
+        except Exception as e:
+            print(f"Error calculando % cambio para {symbol} {timeframe}: {e}")
+            return 0.0
 
     def _update_metrics_ui(self, metrics):
         """Actualiza todas las métricas incluyendo comisiones por período"""
@@ -614,10 +676,10 @@ class ModernTradingGUI:
             self.token_frames[symbol] = card
 
     def create_token_card(self, symbol):
-        """Crea una tarjeta individual de token con % cambio diario"""
+        """Crea una tarjeta individual de token con valores numéricos de señales"""
         card = tk.Frame(self.tokens_container, bg=CARD_BG, relief='flat', bd=1,
                     highlightbackground=TEXT_SECONDARY, highlightthickness=1,
-                    width=280, height=200)  # Aumentamos altura a 200px
+                    width=280, height=200)
         card.pack_propagate(False)
         
         # Header del token
@@ -631,7 +693,7 @@ class ModernTradingGUI:
                             font=("Arial", 12, "bold"))
         price_label.pack(side=tk.RIGHT)
         
-        # ✅ NUEVO: Cambio diario del token
+        # Cambio diario del token
         daily_change_frame = tk.Frame(card, bg=CARD_BG)
         daily_change_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
         
@@ -647,39 +709,44 @@ class ModernTradingGUI:
                                 bg=CARD_BG, fg=TEXT_SECONDARY, font=("Arial", 9))
         balance_label.pack(anchor="w")
         
-        # CONTENEDOR PARA SEMÁFOROS
+        # CONTENEDOR PARA SEÑALES NUMÉRICAS
         signals_container = tk.Frame(card, bg=CARD_BG)
         signals_container.pack(fill=tk.X, padx=10, pady=8)
         
-        # Crear timeframes en fila horizontal
+        # Crear timeframes en fila horizontal - SOLO 30m, 1h, 2h
         timeframe_frame = tk.Frame(signals_container, bg=CARD_BG)
         timeframe_frame.pack()
         
-        # ✅ DEFINIR circles DENTRO de la función
-        circles = {}  # ← AQUÍ SE DEFINE circles
-        timeframes = ["30m", "1h", "2h"]
+        circles = {}
+        timeframes = ["30m", "1h", "2h"]  # ← QUITAMOS "1d"
         
         for i, tf in enumerate(timeframes):
             # Frame individual para cada timeframe
             tf_frame = tk.Frame(timeframe_frame, bg=CARD_BG)
-            tf_frame.pack(side=tk.LEFT, padx=12)
+            tf_frame.pack(side=tk.LEFT, padx=10)  # Más espacio entre ellos
             
-            # Canvas para el círculo
-            canvas = tk.Canvas(tf_frame, width=30, height=30, bg=CARD_BG, highlightthickness=0)
+            # Canvas para el círculo (tamaño normal)
+            canvas = tk.Canvas(tf_frame, width=28, height=28, bg=CARD_BG, highlightthickness=0)
             canvas.pack()
             
             # Círculo centrado
-            circle_id = canvas.create_oval(5, 5, 25, 25, fill="gray", outline=TEXT_SECONDARY, width=2)
+            circle_id = canvas.create_oval(4, 4, 24, 24, fill="gray", outline=TEXT_SECONDARY, width=1)
             
-            # Guardar tanto el canvas como el circle_id
-            circles[tf] = {
-                'canvas': canvas,
-                'circle_id': circle_id
-            }
+            # Label para el valor numérico DEBAJO del círculo
+            value_label = tk.Label(tf_frame, text="0.00", bg=CARD_BG, fg=TEXT_SECONDARY, 
+                                font=("Arial", 8, "bold"))
+            value_label.pack()
             
-            # Texto del timeframe DEBAJO del círculo
+            # Texto del timeframe
             tk.Label(tf_frame, text=tf, bg=CARD_BG, fg=TEXT_SECONDARY, 
                     font=("Arial", 8, "bold")).pack()
+            
+            # Guardar canvas, circle_id y value_label
+            circles[tf] = {
+                'canvas': canvas,
+                'circle_id': circle_id,
+                'value_label': value_label
+            }
         
         # Peso y señal general
         signal_frame = tk.Frame(card, bg=CARD_BG)
@@ -697,19 +764,34 @@ class ModernTradingGUI:
                             font=("Arial", 10, "bold"))
         signal_label.pack(side=tk.LEFT)
         
-        # ✅ Guardar referencias (circles YA está definido)
+        # Guardar referencias
         card.data = {
             "symbol": symbol,
             "price_label": price_label,
-            "daily_change_label": daily_change_label,  # ← NUEVO
+            "daily_change_label": daily_change_label,
             "balance_label": balance_label,
-            "circles": circles,  # ← AHORA SÍ ESTÁ DEFINIDO
+            "circles": circles,
             "weight_label": weight_label,
             "signal_label": signal_label
         }
         
         return card
-    
+
+    def get_oo_value(self, symbol, timeframe):
+        """Obtiene el valor numérico del indicador OO para un símbolo y timeframe"""
+        try:
+            df = self.bot.indicators.get_klines(symbol, timeframe)
+            if df.empty:
+                return 0.0
+            
+            # Calcular indicador OO y obtener el valor numérico
+            color, oo_value = self.bot.indicators.calculate_oo(df)
+            return oo_value
+            
+        except Exception as e:
+            print(f"Error obteniendo valor OO para {symbol} {timeframe}: {e}")
+            return 0.0
+
     def calculate_all_tokens_daily_change(self):
         """Calcula cambios diarios para todos los tokens de una vez (más eficiente)"""
         try:
