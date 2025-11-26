@@ -37,8 +37,8 @@ class ModernTradingGUI:
         self.closing = False
 
         # ✅ INICIALIZAR CACHE DE COMISIONES
-        self._cached_fees = "$0.00"
-        self._last_fee_calc = datetime.now() - timedelta(hours=2)  # Forzar primera actualización
+        self._cached_fees_period = self.get_empty_fees()
+        self._last_fees_calc = datetime.now() - timedelta(hours=2)  # Forzar primera actualización
         
         # Configuración de matplotlib...
         plt.rcParams['figure.facecolor'] = DARK_BG
@@ -226,10 +226,10 @@ class ModernTradingGUI:
                     print(f"Error updating {symbol} UI: {e}")
 
     def _update_metrics_ui(self, metrics):
-        """Actualiza todas las nuevas métricas"""
+        """Actualiza todas las métricas incluyendo comisiones por período"""
         self.total_balance_label.config(text=f"${metrics['total_balance']:,.2f}")
         
-        # SOLO los 8 timeframes compactos
+        # Performance capital
         self.change_30m_label.config(text=metrics['change_30m'])
         self.change_1h_label.config(text=metrics['change_1h'])
         self.change_2h_label.config(text=metrics['change_2h'])
@@ -239,7 +239,11 @@ class ModernTradingGUI:
         self.change_1m_label.config(text=metrics['change_1m'])
         self.change_1y_label.config(text=metrics['change_1y'])
         
-        self.total_fees_label.config(text=metrics['total_fees'])
+        # Comisiones por período
+        self.fees_1d_label.config(text=metrics['fees_1d'])
+        self.fees_1w_label.config(text=metrics['fees_1w'])
+        self.fees_1m_label.config(text=metrics['fees_1m'])
+        self.fees_1y_label.config(text=metrics['fees_1y'])
         
         # Aplicar colores
         self.apply_change_colors(metrics)
@@ -410,7 +414,7 @@ class ModernTradingGUI:
         top_row = tk.Frame(main_container, bg=DARK_BG)
         top_row.pack(fill=tk.X, pady=(0, 20))
 
-        # Métricas principales - VERSIÓN COMPACTADA
+        # Métricas principales - VERSIÓN COMPACTADA CON COMISIONES POR PERÍODO
         metrics_frame = tk.Frame(top_row, bg=DARK_BG)
         metrics_frame.pack(side=tk.LEFT, fill=tk.Y)
 
@@ -418,31 +422,46 @@ class ModernTradingGUI:
             metrics_frame, "💰 BALANCE TOTAL", "$0.00", ACCENT_COLOR
         )
 
-        # CONTENEDOR COMPACTO PARA TIMEFRAMES
-        timeframe_container = tk.Frame(metrics_frame, bg=DARK_BG)
-        timeframe_container.pack(fill=tk.X, pady=(0, 10))
+        # CONTENEDOR COMPACTO PARA PERFORMANCE CAPITAL
+        capital_container = tk.Frame(metrics_frame, bg=DARK_BG)
+        capital_container.pack(fill=tk.X, pady=(0, 10))
 
-        # Fila 1: Timeframes cortos
-        short_tf_frame = tk.Frame(timeframe_container, bg=DARK_BG)
-        short_tf_frame.pack(fill=tk.X, pady=(0, 5))
+        tk.Label(capital_container, text="📈 PERFORMANCE CAPITAL", bg=DARK_BG, fg=TEXT_SECONDARY,
+                font=("Arial", 9, "bold")).pack(anchor="w", pady=(0, 5))
 
-        self.change_30m_label = self.create_compact_metric(short_tf_frame, "30m", "+0.00%", TEXT_SECONDARY)
-        self.change_1h_label = self.create_compact_metric(short_tf_frame, "1h", "+0.00%", TEXT_SECONDARY)
-        self.change_2h_label = self.create_compact_metric(short_tf_frame, "2h", "+0.00%", TEXT_SECONDARY)
-        self.change_4h_label = self.create_compact_metric(short_tf_frame, "4h", "+0.00%", TEXT_SECONDARY)
+        # Fila 1: Performance capital corto
+        capital_short_frame = tk.Frame(capital_container, bg=DARK_BG)
+        capital_short_frame.pack(fill=tk.X, pady=(0, 5))
 
-        # Fila 2: Timeframes largos
-        long_tf_frame = tk.Frame(timeframe_container, bg=DARK_BG)
-        long_tf_frame.pack(fill=tk.X, pady=(0, 5))
+        self.change_30m_label = self.create_compact_metric(capital_short_frame, "30m", "+0.00%", TEXT_SECONDARY)
+        self.change_1h_label = self.create_compact_metric(capital_short_frame, "1h", "+0.00%", TEXT_SECONDARY)
+        self.change_2h_label = self.create_compact_metric(capital_short_frame, "2h", "+0.00%", TEXT_SECONDARY)
+        self.change_4h_label = self.create_compact_metric(capital_short_frame, "4h", "+0.00%", TEXT_SECONDARY)
 
-        self.change_1d_label = self.create_compact_metric(long_tf_frame, "1D", "+0.00%", TEXT_SECONDARY)
-        self.change_1w_label = self.create_compact_metric(long_tf_frame, "1W", "+0.00%", TEXT_SECONDARY)
-        self.change_1m_label = self.create_compact_metric(long_tf_frame, "1M", "+0.00%", TEXT_SECONDARY)
-        self.change_1y_label = self.create_compact_metric(long_tf_frame, "1Y", "+0.00%", TEXT_SECONDARY)
+        # Fila 2: Performance capital largo
+        capital_long_frame = tk.Frame(capital_container, bg=DARK_BG)
+        capital_long_frame.pack(fill=tk.X, pady=(0, 10))
 
-        self.total_fees_label = self.create_metric_card(
-            metrics_frame, "💸 COMISIONES TOTALES", "$0.00", DANGER_COLOR
-        )
+        self.change_1d_label = self.create_compact_metric(capital_long_frame, "1D", "+0.00%", TEXT_SECONDARY)
+        self.change_1w_label = self.create_compact_metric(capital_long_frame, "1W", "+0.00%", TEXT_SECONDARY)
+        self.change_1m_label = self.create_compact_metric(capital_long_frame, "1M", "+0.00%", TEXT_SECONDARY)
+        self.change_1y_label = self.create_compact_metric(capital_long_frame, "1Y", "+0.00%", TEXT_SECONDARY)
+
+        # CONTENEDOR COMPACTO PARA COMISIONES
+        fees_container = tk.Frame(metrics_frame, bg=DARK_BG)
+        fees_container.pack(fill=tk.X, pady=(0, 10))
+
+        tk.Label(fees_container, text="💸 COMISIONES PAGADAS", bg=DARK_BG, fg=TEXT_SECONDARY,
+                font=("Arial", 9, "bold")).pack(anchor="w", pady=(0, 5))
+
+        # Fila única: Comisiones por período
+        fees_frame = tk.Frame(fees_container, bg=DARK_BG)
+        fees_frame.pack(fill=tk.X)
+
+        self.fees_1d_label = self.create_compact_metric(fees_frame, "1D", "$0.00", DANGER_COLOR)
+        self.fees_1w_label = self.create_compact_metric(fees_frame, "1W", "$0.00", DANGER_COLOR)
+        self.fees_1m_label = self.create_compact_metric(fees_frame, "1M", "$0.00", DANGER_COLOR)
+        self.fees_1y_label = self.create_compact_metric(fees_frame, "1Y", "$0.00", DANGER_COLOR)
 
         # Gráfico principal
         chart_frame = tk.Frame(top_row, bg=DARK_BG)
@@ -826,8 +845,9 @@ class ModernTradingGUI:
         self.root.after(300000, self.cleanup_memory)  # Cada 5 minutos
 
     def apply_change_colors(self, metrics):
-        """Aplica colores verde/rojo según cambios positivos/negativos"""
-        changes = {
+        """Aplica colores según cambios positivos/negativos y comisiones"""
+        # Performance capital (verde/rojo)
+        capital_changes = {
             'change_30m': self.change_30m_label,
             'change_1h': self.change_1h_label,
             'change_2h': self.change_2h_label,
@@ -838,7 +858,7 @@ class ModernTradingGUI:
             'change_1y': self.change_1y_label
         }
         
-        for change_key, label in changes.items():
+        for change_key, label in capital_changes.items():
             value = metrics.get(change_key, "+0.00%")
             if value.startswith('+'):
                 label.config(fg=ACCENT_COLOR)  # Verde para positivo
@@ -846,6 +866,25 @@ class ModernTradingGUI:
                 label.config(fg=DANGER_COLOR)  # Rojo para negativo
             else:
                 label.config(fg=TEXT_SECONDARY)  # Gris para neutro
+        
+        # Comisiones (siempre rojo/naranja según monto)
+        fees_changes = {
+            'fees_1d': self.fees_1d_label,
+            'fees_1w': self.fees_1w_label,
+            'fees_1m': self.fees_1m_label,
+            'fees_1y': self.fees_1y_label
+        }
+        
+        for fee_key, label in fees_changes.items():
+            value = metrics.get(fee_key, "$0.00")
+            fee_amount = float(value.replace('$', '').replace(',', ''))
+            
+            if fee_amount > 10.0:
+                label.config(fg=DANGER_COLOR)  # Rojo para comisiones altas
+            elif fee_amount > 1.0:
+                label.config(fg=WARNING_COLOR)  # Naranja para comisiones medias
+            else:
+                label.config(fg=TEXT_SECONDARY)  # Gris para comisiones bajas
 
     def safe_update_ui(self):
         """Inicia actualización en hilo separado de forma segura - EVITA DUPLICADOS"""
@@ -963,6 +1002,132 @@ class ModernTradingGUI:
         except Exception as e:
             print(f"❌ Error calculando comisiones precisas: {e}")
             return "$0.00"
+
+    def get_real_fee_rates(self):
+        """Obtiene las tarifas REALES de comisión de tu cuenta Binance - CORREGIDO"""
+        try:
+            # get_trade_fee devuelve una lista de diccionarios
+            fee_info_list = self.bot.client.get_trade_fee(symbol="BNBUSDC")
+            
+            if not fee_info_list:
+                print("❌ No se pudieron obtener tarifas, lista vacía")
+                return 0.0010
+                
+            # Tomar el primer elemento de la lista
+            fee_info = fee_info_list[0]
+            
+            maker_fee = float(fee_info['makerCommission'])
+            taker_fee = float(fee_info['takerCommission'])
+            
+            # Promedio conservador
+            avg_fee = (maker_fee + taker_fee) / 2
+            
+            print(f"💰 Tarifas reales: Maker {maker_fee*100:.3f}%, Taker {taker_fee*100:.3f}%, Promedio {avg_fee*100:.3f}%")
+            
+            return avg_fee
+            
+        except Exception as e:
+            print(f"❌ No se pudieron obtener tarifas reales, usando 0.1% por defecto: {e}")
+            return 0.0010  # 0.1% por defecto
+
+    def calculate_fees_by_period(self):
+        """Calcula comisiones por período - CON TARIFAS REALES"""
+        try:
+            current_time = datetime.now()
+            
+            if hasattr(self, '_last_fees_calc') and \
+            (current_time - self._last_fees_calc).total_seconds() < 3600:
+                return getattr(self, '_cached_fees_period', self.get_empty_fees())
+            
+            print("🔄 Calculando comisiones con tarifas reales...")
+            
+            # ✅ OBTENER TARIFAS REALES DE TU CUENTA
+            real_fee_rate = self.get_real_fee_rates()
+            print(f"📊 Usando tarifa real: {real_fee_rate*100:.3f}%")
+            
+            # Períodos reales
+            real_periods = {
+                '1d': timedelta(days=1),
+                '30d': timedelta(days=30)
+            }
+            
+            fees_real = {'1d': 0.0, '30d': 0.0}
+            
+            # Procesar símbolos
+            symbols_to_process = list(self.token_frames.keys())[:5]
+            
+            for symbol in symbols_to_process:
+                try:
+                    start_time_30d = int((current_time - timedelta(days=30)).timestamp() * 1000)
+                    trades = self.bot.client.get_my_trades(
+                        symbol=symbol, 
+                        startTime=start_time_30d,
+                        limit=200
+                    )
+                    
+                    for trade in trades:
+                        trade_time = datetime.fromtimestamp(trade['time'] / 1000)
+                        quote_qty = float(trade['quoteQty'])
+                        
+                        # ✅ USAR TARIFA REAL en lugar de 0.00085
+                        trade_fee = quote_qty * real_fee_rate
+                        
+                        # Asignar a períodos
+                        if trade_time >= (current_time - real_periods['1d']):
+                            fees_real['1d'] += trade_fee
+                        
+                        fees_real['30d'] += trade_fee
+                    
+                    print(f"✅ {symbol}: {len(trades)} trades")
+                            
+                except Exception as e:
+                    print(f"⚠️ Error en {symbol}: {e}")
+                    continue
+            
+            # Estimaciones basadas en datos reales
+            monthly_fees = fees_real['30d']
+            
+            if monthly_fees > 0:
+                # Si tenemos datos de 1D real, proyectar 1W más inteligentemente
+                if fees_real['1d'] > 0:
+                    daily_avg = monthly_fees / 30
+                    current_day_ratio = fees_real['1d'] / daily_avg if daily_avg > 0 else 1.0
+                    # Ajustar proyección según actividad reciente
+                    weekly_estimate = monthly_fees * 0.3 * current_day_ratio
+                else:
+                    weekly_estimate = monthly_fees * 0.3
+                
+                yearly_estimate = monthly_fees * 8.5
+            else:
+                weekly_estimate = 0.0
+                yearly_estimate = 0.0
+            
+            fees_by_period = {
+                '1d': fees_real['1d'],
+                '1w': weekly_estimate, 
+                '1m': monthly_fees,
+                '1y': yearly_estimate
+            }
+            
+            # Cachear resultados
+            self._cached_fees_period = fees_by_period
+            self._last_fees_calc = current_time
+            
+            print(f"💰 Comisiones REALES calculadas:")
+            print(f"  Tarifa usada: {real_fee_rate*100:.3f}%")
+            print(f"  1D: ${fees_by_period['1d']:.2f}")
+            print(f"  1M: ${fees_by_period['1m']:.2f}")
+            
+            return fees_by_period
+            
+        except Exception as e:
+            print(f"❌ Error cálculo comisiones: {e}")
+            return self.get_empty_fees()
+
+
+    def get_empty_fees(self):
+        """Retorna estructura vacía de comisiones"""
+        return {'1d': 0.0, '1w': 0.0, '1m': 0.0, '1y': 0.0}
 
     def calculate_token_performance(self, symbol, current_price):
         """Calcula rendimiento individual de un token"""
@@ -1346,12 +1511,8 @@ class ModernTradingGUI:
             now = datetime.now()
             self._update_history(now, total_balance)
             
-            # ✅ CALCULAR COMISIONES - VERIFICAR SI NECESITA ACTUALIZACIÓN
-            current_time = datetime.now()
-            needs_fee_update = (
-                not hasattr(self, '_last_fee_calc') or 
-                (current_time - self._last_fee_calc).total_seconds() >= 3600  # 1 hora
-            )
+            # ✅ CALCULAR COMISIONES POR PERÍODO
+            fees_data = self.calculate_fees_by_period()  # ← DEFINIR fees_data AQUÍ
             
             # ✅ CALCULAR TODAS LAS NUEVAS MÉTRICAS DE RENDIMIENTO
             performance_data = self.calculate_all_performance_metrics(total_balance)
@@ -1397,8 +1558,11 @@ class ModernTradingGUI:
                 'change_1m': performance_data['change_1m'],
                 'change_1y': performance_data['change_1y'],
                 
-                # Comisiones ACTUALIZADAS cada hora
-                'total_fees': self.calculate_total_fees(),  # ← Ahora con cache inteligente
+                # Comisiones por período
+                'fees_1d': f"${fees_data['1d']:.2f}",
+                'fees_1w': f"${fees_data['1w']:.2f}",
+                'fees_1m': f"${fees_data['1m']:.2f}",
+                'fees_1y': f"${fees_data['1y']:.2f}",
                 
                 # Métricas existentes
                 'active_trades': f"{sum(1 for s in symbol_data.values() if s['usd'] > 1)}/{len(symbol_data)}",
