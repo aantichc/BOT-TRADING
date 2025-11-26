@@ -521,7 +521,7 @@ class ModernTradingGUI:
             return f"ERROR: {str(e)}"
 
     def safe_update_ui(self):
-        """✅ ACTUALIZACIÓN PRINCIPAL - CON VERIFICACIÓN DE TKINTER"""
+        """✅ ACTUALIZACIÓN PRINCIPAL - CON VERIFICACIÓN DE TKINTER Y ACTIVACIÓN DE INDICADORES"""
         # ✅ VERIFICAR SALUD DE TKINTER ANTES DE CONTINUAR
         tk_health = self.check_tkinter_health()
         if tk_health != "HEALTHY":
@@ -539,21 +539,32 @@ class ModernTradingGUI:
         
         current_time = time.time()
         
+        # ✅ ACTIVAR INDICADOR DE ACTUALIZACIÓN GENERAL AL INICIAR
+        self.update_section_indicator('metrics')
+        
         # ✅ ACTUALIZACIONES CON VERIFICACIÓN DE TKINTER
         if self._should_update('tokens', current_time):
             print("🔄 Programando actualización de tokens...")
+            # ✅ ACTIVAR INDICADOR ANTES DE PROGRAMAR LA TAREA
+            self.update_section_indicator('tokens')
             self._schedule_background_task(self._update_tokens_background)
         
         if self._should_update('metrics', current_time):
-            print("🔄 Programando actualización de métricas...") 
+            print("🔄 Programando actualización de métricas...")
+            # ✅ ACTIVAR INDICADOR ANTES DE PROGRAMAR LA TAREA  
+            self.update_section_indicator('metrics')
             self._schedule_background_task(self._update_metrics_background)
         
         if self._should_update('portfolio', current_time):
             print("🔄 Programando actualización de portfolio...")
+            # ✅ ACTIVAR INDICADOR ANTES DE PROGRAMAR LA TAREA
+            self.update_section_indicator('portfolio')
             self._schedule_background_task(self._update_portfolio_background)
         
         if self._should_update('chart', current_time):
             print("🔄 Programando actualización de gráfico...")
+            # ✅ ACTIVAR INDICADOR ANTES DE PROGRAMAR LA TAREA
+            self.update_section_indicator('chart')
             self._schedule_background_task(self._update_chart_background)
         
         # ✅ PROGRAMAR SIGUIENTE CON VERIFICACIÓN
@@ -1477,7 +1488,12 @@ class ModernTradingGUI:
         last_time = self.last_update_time.get(update_type, 0)
         interval = self.update_intervals[update_type]
         
-        return (current_time - last_time) >= interval
+        should_update = (current_time - last_time) >= interval
+        
+        if should_update:
+            print(f"✅ {update_type} necesita actualización - último: {last_time}, actual: {current_time}, intervalo: {interval}")
+        
+        return should_update
 
     def _update_tokens_background(self):
         """✅ ACTUALIZACIÓN DE TOKENS - PROCESAR TODOS LOS TOKENS"""
@@ -1493,9 +1509,6 @@ class ModernTradingGUI:
             
         self.is_updating['tokens'] = True
         try:
-            # ✅ ACTIVAR INDICADOR - ESTA LÍNEA ES CRÍTICA
-            print("🎯 ACTIVANDO INDICADOR DE TOKENS...")
-            self.update_section_indicator('tokens')
             
             symbol_data = {}
             
@@ -1560,9 +1573,6 @@ class ModernTradingGUI:
             
         self.is_updating['metrics'] = True
         try:
-            # ✅ ACTIVAR INDICADOR  
-            print("🎯 ACTIVANDO INDICADOR DE MÉTRICAS...")
-            self.update_section_indicator('metrics')
             
             total_balance = self.bot.account.get_balance_usdc()
             
@@ -1602,9 +1612,6 @@ class ModernTradingGUI:
         """✅ ACTUALIZACIÓN OPTIMIZADA DE CARTERA - MENOS FRECUENTE"""
         if self.closing or not self.bot:
             return
-            
-        # ✅ ACTIVAR INDICADOR
-        self.update_section_indicator('portfolio')
         
         self.is_updating['portfolio'] = True
         try:
@@ -1620,10 +1627,6 @@ class ModernTradingGUI:
         """✅ ACTUALIZACIÓN OPTIMIZADA DEL GRÁFICO"""
         if self.closing:
             return
-            
-        # ✅ ACTIVAR INDICADOR
-        self.update_section_indicator('chart')
-        
         self.is_updating['chart'] = True
         try:
             total_balance = self.bot.account.get_balance_usdc() if self.bot else 0
