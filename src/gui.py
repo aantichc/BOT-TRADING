@@ -59,12 +59,12 @@ class ModernTradingGUI:
             'daily_change': time.time()
         } 
         self.update_intervals = {
-            'metrics': 180,       # 3 minutos
-            'portfolio': 180,     # 3 minutos  
-            'tokens': 60,         # 1 minutos
-            'chart': 180,         # 3 minutos
-            'fees': 7200,         # 2 horas
-            'daily_change': 180   # 3 minutos
+            'metrics': 60,       # 1 minutos
+            'portfolio': 60,     # 1 minutos  
+            'tokens': 30,         # 1/2 minutos
+            'chart': 60,         # 1 minutos
+            'fees': 3600,         # 1 horas
+            'daily_change': 60   # 1 minutos
         }
         self.is_updating = {key: False for key in self.update_intervals}
         self._cached_daily_changes = {}

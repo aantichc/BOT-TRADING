@@ -13,7 +13,7 @@ class CapitalManager:
         self.SYMBOLS = SYMBOLS
         self.first_rebalance_done = False
         self.signal_cooldowns = {}
-        self.COOLDOWN_MINUTES = 5
+        self.COOLDOWN_MINUTES = 10
         
     def should_allow_signal_change(self, symbol, timeframe, new_signal):
         key = (symbol, timeframe)
