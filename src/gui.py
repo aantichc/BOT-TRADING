@@ -115,7 +115,6 @@ class ModernTradingGUI:
         self.root.after(60000, self.setup_memory_cleanup)  # Empezar después de 1 minuto
 
                         # ✅ VERIFICAR COLORES INICIALES DE INDICADORES
-        print("🎨 Verificando colores iniciales de indicadores:")
         for section in ['tokens', 'metrics', 'portfolio', 'chart']:
             indicator = self.section_indicators.get(section)
             if indicator:
@@ -285,7 +284,6 @@ class ModernTradingGUI:
         # ✅ INICIAR EN VERDE BRILLANTE
         try:
             indicator.config(fg="#00ff00")
-            print(f"   🟢 Efecto pulso iniciado para {section_name}")
         except:
             return
             
@@ -480,9 +478,6 @@ class ModernTradingGUI:
                         fg=weight_color,
                         font=("Arial", 9, "bold")
                     )
-                    
-                    # ✅ LOG FINAL MÁS LIMPIO
-                    print(f"   ✅ {symbol} UI actualizado")
                     
                 except Exception as e:
                     print(f"❌ Error actualizando {symbol} UI: {e}")
@@ -711,24 +706,20 @@ class ModernTradingGUI:
         updates_scheduled = 0
         
         if self._should_update('tokens', current_time) and updates_scheduled < 2:
-            print("🔄 Programando actualización de tokens...")
             self._schedule_background_task(self._update_tokens_background)
             updates_scheduled += 1
             
         if self._should_update('metrics', current_time) and updates_scheduled < 2:  
-            print("🔄 Programando actualización de métricas...")
             self._schedule_background_task(self._update_metrics_background)
             # ✅ EL INDICADOR SE ACTIVA DENTRO de _update_metrics_background
             updates_scheduled += 1
             
         if self._should_update('portfolio', current_time) and updates_scheduled < 2:
-            print("🔄 Programando actualización de portfolio...")
             self._schedule_background_task(self._update_portfolio_background)
             # ✅ EL INDICADOR SE ACTIVA DENTRO de _update_portfolio_background
             updates_scheduled += 1
             
         if self._should_update('chart', current_time) and updates_scheduled < 2:
-            print("🔄 Programando actualización de gráfico...")
             self._schedule_background_task(self._update_chart_background)
             # ✅ EL INDICADOR SE ACTIVA DENTRO de _update_chart_background
             updates_scheduled += 1
@@ -737,6 +728,9 @@ class ModernTradingGUI:
         next_interval = 30000 if updates_scheduled > 0 else 15000
         if not self.closing:
             self.root.after(next_interval, self.safe_update_ui)
+                             
+        if updates_scheduled > 0:
+            print(f"🔄 Programadas {updates_scheduled} actualizaciones")
 
     def safe_start_updates(self):
         """Iniciar actualizaciones de forma segura después de que el loop esté activo"""
@@ -767,10 +761,6 @@ class ModernTradingGUI:
         style = ttk.Style()
         style.theme_use('clam')
         
-        # ✅ VERIFICAR QUE LOS COLORES ESTÉN BIEN DEFINIDOS
-        print("🎨 Verificando configuración de colores:")
-        print(f"   ACCENT_COLOR: {ACCENT_COLOR}")
-        print(f"   TEXT_SECONDARY: {TEXT_SECONDARY}")
         
         # Configurar colores para ttk widgets
         style.configure('TFrame', background=DARK_BG)
@@ -1057,9 +1047,7 @@ class ModernTradingGUI:
         """✅ INICIAR TODOS LOS PULSOS AL ARRANCAR - VERSIÓN MEJORADA"""
         if self.closing:
             return
-            
-        print("🔄 Iniciando pulsos continuos para todas las secciones...")
-        
+
         for section_name in ['tokens', 'metrics', 'portfolio', 'chart']:
             # ✅ VERIFICAR SI ESTA SECCIÓN TIENE TIMESTAMP VÁLIDO
             if section_name in self.last_update_time:
@@ -1073,29 +1061,23 @@ class ModernTradingGUI:
                 
                 if time_since_update < update_interval * 2:  # Máximo 2x el intervalo
                     self.start_continuous_pulse(section_name)
-                    print(f"   ✅ Pulso iniciado para {section_name} (hace {time_since_update:.1f}s)")
                 else:
                     # Si hace mucho que no se actualiza, dejar en gris
                     indicator = self.section_indicators.get(section_name)
                     if indicator:
                         indicator.config(fg=TEXT_SECONDARY)
-                        print(f"   ⚪ {section_name} en gris (sin actualización reciente)")
             else:
                 # Si nunca se actualizó, dejar en gris
                 indicator = self.section_indicators.get(section_name)
                 if indicator:
                     indicator.config(fg=TEXT_SECONDARY)
-                print(f"   ⚪ {section_name} en gris (sin timestamp)")
 
     def setup_tooltips(self):
         """✅ CONFIGURAR TOOLTIPS - VERSIÓN MEJORADA"""
-        print("🔧 Configurando tooltips para indicadores...")
         
         # Verificar que todos los indicadores existen
         for section in ['tokens', 'metrics', 'portfolio', 'chart']:
             indicator = self.section_indicators.get(section)
-            debug_label = getattr(self, f"{section}_debug_label", None)
-            print(f"   ✅ {section}: Indicador={indicator is not None}, DebugLabel={debug_label is not None}")
             
             if indicator:
                 # Remover bindings existentes para evitar duplicados
@@ -1105,7 +1087,6 @@ class ModernTradingGUI:
                 # Configurar nuevos bindings
                 indicator.bind("<Enter>", lambda e, s=section: self.show_tooltip(e, s))
                 indicator.bind("<Leave>", self.hide_tooltip)
-                print(f"   🎯 Tooltip configurado para {section}")
 
     def show_tooltip(self, event, section_name):
         """Mostrar tooltip con última actualización"""
@@ -1146,10 +1127,6 @@ class ModernTradingGUI:
         # Tiempo ya transcurrido desde última actualización
         time_elapsed = current_time - last_update
         
-        # Tiempo restante para completar el pulso
-        time_remaining = max(0.1, total_pulse_duration - time_elapsed)
-        
-        print(f"   🔄 Pulso continuo {section_name}: {time_remaining:.1f}s restantes")
         
         def continuous_pulse_frame(start_time=current_time):
             if self.closing or not indicator or not indicator.winfo_exists():
@@ -1163,7 +1140,6 @@ class ModernTradingGUI:
                 # ✅ PULSO COMPLETADO - volver a gris y esperar próxima actualización
                 try:
                     indicator.config(fg=TEXT_SECONDARY)
-                    print(f"   ⚪ Pulso continuo {section_name} completado")
                 except:
                     pass
                 return
@@ -1205,7 +1181,6 @@ class ModernTradingGUI:
             initial_color = f"#{initial_r:02x}{initial_g:02x}{initial_b:02x}"
             indicator.config(fg=initial_color)
             
-            print(f"   🟢 Pulso continuo iniciado para {section_name}")
         except:
             return
             
@@ -1242,7 +1217,7 @@ class ModernTradingGUI:
                     indicator = self.section_indicators.get(section_name)
                     if indicator and indicator.winfo_exists():
                         indicator.config(fg=TEXT_SECONDARY)
-                        print(f"   ⚪ Indicador {section_name} RESETEADO visualmente")
+
                         
                 except Exception as e:
                     if "main thread is not in main loop" not in str(e) and "has been destroyed" not in str(e):
