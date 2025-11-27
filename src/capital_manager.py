@@ -53,7 +53,6 @@ class CapitalManager:
         
         if is_same_signal:
             cooldown_data['last_signal'] = new_signal
-            print(f"✅ Misma señal durante cooldown: {symbol} {timeframe} {new_signal}")
             return True
         elif is_natural_progression:
             cooldown_data['last_signal'] = new_signal
@@ -70,9 +69,9 @@ class CapitalManager:
     def is_natural_progression(self, current_signal, new_signal):
         """Define qué se considera evolución natural permitida durante cooldown"""
         natural_transitions = {
-            'RED': ['YELLOW'],     # Rojo solo puede ir a Amarillo
-            'YELLOW': ['GREEN'],   # Amarillo solo puede ir a Verde  
-            'GREEN': ['YELLOW']    # Verde solo puede ir a Amarillo
+            'RED': ['YELLOW', 'GREEN'],     # Rojo puede ir a Amarillo O VERDE directo
+            'YELLOW': ['GREEN', 'RED'],     # Amarillo puede ir a Verde O Rojo
+            'GREEN': ['YELLOW', 'RED']      # Verde puede ir a Amarillo O ROJO directo
         }
         
         return (current_signal in natural_transitions and 
