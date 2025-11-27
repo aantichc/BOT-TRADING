@@ -113,17 +113,6 @@ class ModernTradingGUI:
         
         # INICIALIZAR LIMPIEZA PERIÓDICA
         self.root.after(60000, self.setup_memory_cleanup)  # Empezar después de 1 minuto
-
-                        # ✅ VERIFICAR COLORES INICIALES DE INDICADORES
-        for section in ['tokens', 'metrics', 'portfolio', 'chart']:
-            indicator = self.section_indicators.get(section)
-            if indicator:
-                try:
-                    color = indicator.cget('foreground')
-                    print(f"   {section}: {color}")
-                except Exception as e:
-                    print(f"   {section}: Error obteniendo color - {e}")
-
             
                 # ✅ SISTEMA DE COLA PARA INDICADORES DESDE HILOS SECUNDARIOS
         self.indicator_actions = queue.Queue()
