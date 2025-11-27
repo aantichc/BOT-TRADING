@@ -1431,7 +1431,7 @@ class ModernTradingGUI:
                 
             except Exception as e:
                 print(f"❌ Error cargando historial: {e}")
-            
+        
         # ✅ Si no hay historial, crear uno inicial
         if self.bot and hasattr(self.bot, 'account'):
             try:
@@ -1442,6 +1442,9 @@ class ModernTradingGUI:
             except:
                 pass
         
+        # ✅ RETORNAR LISTA VACÍA SI TODO FALLA
+        return []
+ 
     def _compress_old_data(self, history):
         """Comprime datos antiguos manteniendo 1 punto por hora"""
         if len(history) <= 1000:
@@ -2238,6 +2241,9 @@ class ModernTradingGUI:
 
     def _update_history(self, now, total_balance):
         """Historial más agresivo - 1 punto cada 5 minutos para datos antiguos"""
+                # ✅ INICIALIZAR SI ES NECESARIO
+        if self.history is None:
+            self.history = []
         if not self.history:
             self.history.append((now, total_balance))
             return
