@@ -642,6 +642,9 @@ class ModernTradingGUI:
         
         current_time = time.time()
         
+                # ✅ ACTIVAR INDICADOR DE ACTUALIZACIÓN GENERAL
+        self.update_section_indicator('metrics')
+        
         # ✅ ACTUALIZACIONES MÁS ESPACIADAS
         updates_scheduled = 0
         
@@ -655,6 +658,12 @@ class ModernTradingGUI:
             
         if self._should_update('portfolio', current_time) and updates_scheduled < 2:
             self._schedule_background_task(self._update_portfolio_background)
+            updates_scheduled += 1
+            
+        # ✅ AGREGAR ACTUALIZACIÓN DEL GRÁFICO
+        if self._should_update('chart', current_time) and updates_scheduled < 2:
+            print("🔄 Programando actualización de gráfico...")
+            self._schedule_background_task(self._update_chart_background)
             updates_scheduled += 1
             
         # ✅ PROGRAMAR SIGUIENTE CON INTERVALO MÁS LARGO
@@ -1688,8 +1697,9 @@ class ModernTradingGUI:
             return
         self.is_updating['chart'] = True
         try:
-                        # ✅ ACTIVAR INDICADOR
+            # ✅ ACTIVAR INDICADOR DEL GRÁFICO
             self.update_section_indicator('chart')
+            print("   📊 Indicador del gráfico activado")
             total_balance = self.bot.account.get_balance_usdc() if self.bot else 0
             self.data_queue.put(("chart_update", total_balance))
             
@@ -2152,13 +2162,13 @@ class ModernTradingGUI:
                 self.save_history()
 
     def _update_main_chart(self, total_balance):
-        """✅ GRÁFICO MEJORADO - MANEJA DATOS VACÍOS"""
+        """✅ GRÁFICO MEJORADO CON MEJORES LOGS"""
         try:
             tf = self.tf_var.get()
+            print(f"   📈 Actualizando gráfico ({tf})...")
             
-            # ✅ SI NO HAY HISTORIAL, CREAR UNO BÁSICO
             if not self.history:
-                print("📊 Creando historial inicial para gráfico...")
+                print("   📊 Creando historial inicial para gráfico...")
                 self.history = [(datetime.now(), total_balance)]
                 self.save_history()
             
@@ -2166,8 +2176,7 @@ class ModernTradingGUI:
             filtered = self._filter_data_by_timeframe(tf)
             
             if not filtered:
-                # ✅ CREAR DATOS DE EJEMPLO SI NO HAY FILTRADOS
-                print("📊 Creando datos de ejemplo para gráfico...")
+                print("   📊 Creando datos de ejemplo para gráfico...")
                 filtered = [
                     (datetime.now() - timedelta(hours=2), total_balance * 0.98),
                     (datetime.now() - timedelta(hours=1), total_balance * 0.99),
@@ -2200,11 +2209,10 @@ class ModernTradingGUI:
             self.fig.tight_layout()
             
             self.canvas.draw()
-            print("✅ Gráfico actualizado correctamente")
-
+            print(f"   ✅ Gráfico actualizado: {len(filtered)} puntos")
+            
         except Exception as e:
             print(f"❌ Error actualizando gráfico: {e}")
-            # ✅ CREAR GRÁFICO DE EMERGENCIA
             self._create_emergency_chart()
 
     def _create_emergency_chart(self):
