@@ -644,9 +644,6 @@ class ModernTradingGUI:
             print("🔄 Iniciando ciclo de actualizaciones automáticas...")
             self.root.after(5000, self.safe_update_ui)  # Primera en 5 segundos
             
-            self.log_trade(f"✅ Sistema inicializado - Balance: ${total_balance:,.2f}", 'GREEN')
-            print("✅ Actualización inicial completada correctamente")
-            
         except Exception as e:
             print(f"❌ Error en actualización inicial: {e}")
             import traceback

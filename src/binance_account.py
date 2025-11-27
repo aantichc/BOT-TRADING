@@ -59,7 +59,7 @@ class BinanceAccount:
     # Archivo: binance_account.py - MODIFICAR MÉTODO buy_market
     def buy_market(self, symbol, usd_amount):
         if not TRADING_ENABLED:
-            msg = f"[SIM] 🟢 COMPRA {symbol}: ${usd_amount:.1f}"
+            msg = f"[SIM] 🟢 BUY {symbol}: ${usd_amount:.1f}"
             if self.gui: 
                 self.gui.log_trade(msg, 'GREEN')
             return True, msg
@@ -96,13 +96,13 @@ class BinanceAccount:
             executed_price = float(order['fills'][0]['price']) if order.get('fills') else price
             executed_total = float(order['cummulativeQuoteQty']) if order.get('cummulativeQuoteQty') else usd_amount
             
-            msg = f"🟢 COMPRA {symbol}: {quantity:.2f} a ${executed_price:.4f} = ${executed_total:.4f}"
+            msg = f"🟢 BUY {symbol}: {quantity:.2f} a ${executed_price:.4f} = ${executed_total:.4f}"
             if self.gui: 
                 self.gui.log_trade(msg, 'GREEN')
             return True, msg
             
         except BinanceAPIException as e:
-            msg = f"❌ ERROR COMPRA {symbol}: {e.message}"
+            msg = f"❌ ERROR BUY {symbol}: {e.message}"
             if self.gui: 
                 self.gui.log_trade(msg, 'RED')
             return False, msg

@@ -37,7 +37,7 @@ def main():
         print("✅ Bot iniciado")
         
         # ✅ LOG INICIAL
-        gui.log_trade("🚀 Sistema completamente inicializado", 'GREEN')
+        gui.log_trade("🚀 System Initialized", 'GREEN')
         
         print("🎯 Aplicación ejecutándose correctamente...")
         

@@ -50,7 +50,7 @@ class TradingBot:
             self.thread.start()
             print("🤖 Bot Started - GUI completamente conectada")
             if self.gui: 
-                self.gui.log_trade("🤖 Bot Started - Sistema operativo", 'GREEN')
+                self.gui.log_trade("🤖 Bot Started", 'GREEN')
                 
     def stop(self):
         """Parada normal"""
