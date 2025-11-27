@@ -99,6 +99,7 @@ class ModernTradingGUI:
         self.setup_styles()
         self.create_widgets()
         self.root.after(30000, self._simple_health_check) 
+        self.root.after(2000, self.start_all_continuous_pulses)
         self.history = self.load_history()
         self.process_data_queue()
         
@@ -131,6 +132,11 @@ class ModernTradingGUI:
         
         print("🔧 Sistema de cola de indicadores inicializado")
         
+                # ✅ CONTROL DE ANIMACIONES ACTIVAS
+        self.active_pulses = {}  # {section_name: animation_id}
+        
+        print("🎬 Sistema de pulsos continuos inicializado")
+
     def setup_indicator_queue_processor(self):
         """✅ PROCESADOR DE ACCIONES DE INDICADORES DESDE CUALQUIER HILO"""
         def process_indicator_actions():
@@ -218,6 +224,74 @@ class ModernTradingGUI:
         finally:
             if not self.closing:
                 self.root.after(30000, self._simple_health_check)
+
+    def start_pulse_effect(self, section_name, duration=4):
+        """✅ EFECTO DE PULSO - verde brillante que se desvanece suavemente a gris en X segundos"""
+        if self.closing:
+            return
+            
+        indicator = self.section_indicators.get(section_name)
+        if not indicator or not indicator.winfo_exists():
+            return
+        
+        start_time = time.time()
+        total_steps = int(duration * 10)  # 10 FPS = suave pero ligero
+        
+        def pulse_frame(step=0):
+            if self.closing or not indicator or not indicator.winfo_exists():
+                return
+                
+            # Calcular progreso (0.0 a 1.0)
+            progress = step / total_steps if total_steps > 0 else 1.0
+            
+            if progress >= 1.0:
+                # Fin de la animación - volver a gris permanente
+                try:
+                    indicator.config(fg=TEXT_SECONDARY)
+                    print(f"   ⚪ Efecto pulso {section_name} completado")
+                except:
+                    pass
+                return
+            
+            # ✅ ALGORITMO DE FADE: Verde brillante → Gris suavemente
+            # En progreso 0.0: VERDE PURO (#00ff00)
+            # En progreso 1.0: GRIS (#bbbbbb)
+            
+            # Componentes RGB del color inicial (verde) y final (gris)
+            start_r, start_g, start_b = 0, 255, 0      # #00ff00
+            end_r, end_g, end_b = 187, 187, 187        # #bbbbbb
+            
+            # Interpolar entre verde y gris
+            current_r = int(start_r + (end_r - start_r) * progress)
+            current_g = int(start_g + (end_g - start_g) * progress) 
+            current_b = int(start_b + (end_b - start_b) * progress)
+            
+            # Asegurar valores dentro de rango
+            current_r = max(0, min(255, current_r))
+            current_g = max(0, min(255, current_g))
+            current_b = max(0, min(255, current_b))
+            
+            color = f"#{current_r:02x}{current_g:02x}{current_b:02x}"
+            
+            try:
+                indicator.config(fg=color)
+            except:
+                pass  # Ignorar errores si el indicador fue destruido
+            
+            # Siguiente frame en 100ms (10 FPS)
+            if hasattr(self, 'root') and self.root and not self.closing:
+                self.root.after(100, lambda: pulse_frame(step + 1))
+        
+        # ✅ INICIAR EN VERDE BRILLANTE
+        try:
+            indicator.config(fg="#00ff00")
+            print(f"   🟢 Efecto pulso iniciado para {section_name}")
+        except:
+            return
+            
+        # Iniciar animación después de breve pausa para que se vea el verde
+        if hasattr(self, 'root') and self.root:
+            self.root.after(50, lambda: pulse_frame(1))  # Empezar en paso 1 (ya mostramos el verde en paso 0)
 
        
     def _test_indicators_manual(self):
@@ -990,6 +1064,40 @@ class ModernTradingGUI:
         # ✅ CONFIGURAR TOOLTIPS DESPUÉS DE CREAR TODOS LOS INDICADORES
         self.setup_tooltips()
 
+    def start_all_continuous_pulses(self):
+        """✅ INICIAR TODOS LOS PULSOS AL ARRANCAR - VERSIÓN MEJORADA"""
+        if self.closing:
+            return
+            
+        print("🔄 Iniciando pulsos continuos para todas las secciones...")
+        
+        for section_name in ['tokens', 'metrics', 'portfolio', 'chart']:
+            # ✅ VERIFICAR SI ESTA SECCIÓN TIENE TIMESTAMP VÁLIDO
+            if section_name in self.last_update_time:
+                current_time = time.time()
+                last_update = self.last_update_time[section_name]
+                update_interval = self.update_intervals.get(section_name, 60)
+                
+                # Solo iniciar pulso si la última actualización fue reciente
+                # (evita pulsos eternos si la sección nunca se actualizó realmente)
+                time_since_update = current_time - last_update
+                
+                if time_since_update < update_interval * 2:  # Máximo 2x el intervalo
+                    self.start_continuous_pulse(section_name)
+                    print(f"   ✅ Pulso iniciado para {section_name} (hace {time_since_update:.1f}s)")
+                else:
+                    # Si hace mucho que no se actualiza, dejar en gris
+                    indicator = self.section_indicators.get(section_name)
+                    if indicator:
+                        indicator.config(fg=TEXT_SECONDARY)
+                        print(f"   ⚪ {section_name} en gris (sin actualización reciente)")
+            else:
+                # Si nunca se actualizó, dejar en gris
+                indicator = self.section_indicators.get(section_name)
+                if indicator:
+                    indicator.config(fg=TEXT_SECONDARY)
+                print(f"   ⚪ {section_name} en gris (sin timestamp)")
+
     def setup_tooltips(self):
         """✅ CONFIGURAR TOOLTIPS - VERSIÓN MEJORADA"""
         print("🔧 Configurando tooltips para indicadores...")
@@ -1029,42 +1137,108 @@ class ModernTradingGUI:
         if hasattr(self, 'tooltip'):
             self.tooltip.destroy()
 
-    def _do_activate_indicator(self, section_name):
-        """✅ ACTIVACIÓN DIRECTA EN HILO PRINCIPAL"""
+    def start_continuous_pulse(self, section_name):
+        """✅ PULSO CONTINUO - desde actualización hasta próxima actualización"""
         if self.closing:
             return
             
         indicator = self.section_indicators.get(section_name)
-        if indicator and indicator.winfo_exists():
+        if not indicator or not indicator.winfo_exists():
+            return
+        
+        # ✅ CALCULAR DURACIÓN TOTAL HASTA PRÓXIMA ACTUALIZACIÓN
+        current_time = time.time()
+        last_update = self.last_update_time.get(section_name, current_time)
+        update_interval = self.update_intervals.get(section_name, 60)
+        
+        # Tiempo total del pulso (desde última actualización hasta próxima)
+        total_pulse_duration = update_interval
+        
+        # Tiempo ya transcurrido desde última actualización
+        time_elapsed = current_time - last_update
+        
+        # Tiempo restante para completar el pulso
+        time_remaining = max(0.1, total_pulse_duration - time_elapsed)
+        
+        print(f"   🔄 Pulso continuo {section_name}: {time_remaining:.1f}s restantes")
+        
+        def continuous_pulse_frame(start_time=current_time):
+            if self.closing or not indicator or not indicator.winfo_exists():
+                return
+                
+            # Calcular progreso del pulso (0.0 = inicio, 1.0 = fin)
+            current_elapsed = time.time() - start_time
+            progress = min(current_elapsed / total_pulse_duration, 1.0)
+            
+            if progress >= 1.0:
+                # ✅ PULSO COMPLETADO - volver a gris y esperar próxima actualización
+                try:
+                    indicator.config(fg=TEXT_SECONDARY)
+                    print(f"   ⚪ Pulso continuo {section_name} completado")
+                except:
+                    pass
+                return
+            
+            # ✅ ALGORITMO DE FADE CONTINUO
+            # Progreso 0.0: VERDE BRILLANTE (#00ff00) - acaba de actualizarse
+            # Progreso 1.0: GRIS (#bbbbbb) - próxima actualización
+            
+            start_r, start_g, start_b = 0, 255, 0      # #00ff00
+            end_r, end_g, end_b = 187, 187, 187        # #bbbbbb
+            
+            current_r = int(start_r + (end_r - start_r) * progress)
+            current_g = int(start_g + (end_g - start_g) * progress) 
+            current_b = int(start_b + (end_b - start_b) * progress)
+            
+            current_r = max(0, min(255, current_r))
+            current_g = max(0, min(255, current_g))
+            current_b = max(0, min(255, current_b))
+            
+            color = f"#{current_r:02x}{current_g:02x}{current_b:02x}"
+            
             try:
-                # CAMBIAR COLOR A AMARILLO
-                indicator.config(fg=WARNING_COLOR)
-                
-                # ACTUALIZAR TIMESTAMP
-                current_time = datetime.now().strftime("%H:%M:%S")
-                self.last_update_times[section_name] = current_time
-                
-                # PROGRAMAR RESET EN 5 SEGUNDOS
-                self.root.after(5000, lambda: self._do_reset_indicator(section_name))
-                
-                print(f"   🟡 Indicador {section_name} ACTIVADO")
-                
-            except Exception as e:
-                print(f"❌ Error visual en _do_activate_indicator {section_name}: {e}")
+                indicator.config(fg=color)
+            except:
+                pass
+            
+            # ✅ SIGUIENTE FRAME EN 100ms (ACTUALIZACIÓN CONTINUA)
+            if hasattr(self, 'root') and self.root and not self.closing:
+                self.root.after(100, continuous_pulse_frame)
+        
+        # ✅ INICIAR PULSO CONTINUO
+        try:
+            # Empezar desde el color correspondiente al progreso actual
+            initial_progress = time_elapsed / total_pulse_duration
+            initial_r = int(0 + (187 - 0) * initial_progress)
+            initial_g = int(255 + (187 - 255) * initial_progress)
+            initial_b = int(0 + (187 - 0) * initial_progress)
+            
+            initial_color = f"#{initial_r:02x}{initial_g:02x}{initial_b:02x}"
+            indicator.config(fg=initial_color)
+            
+            print(f"   🟢 Pulso continuo iniciado para {section_name}")
+        except:
+            return
+            
+        # Iniciar animación continua
+        if hasattr(self, 'root') and self.root:
+            self.root.after(100, continuous_pulse_frame)
 
-    def _do_reset_indicator(self, section_name):
-        """✅ RESET DIRECTO EN HILO PRINCIPAL"""
+    def _do_activate_indicator(self, section_name):
+        """✅ ACTIVACIÓN CON CONTROL DE DUPLICADOS"""
         if self.closing:
             return
             
-        indicator = self.section_indicators.get(section_name)
-        if indicator and indicator.winfo_exists():
-            try:
-                indicator.config(fg=TEXT_SECONDARY)
-                print(f"   ⚪ Indicador {section_name} RESETEADO")
-            except Exception as e:
-                print(f"❌ Error visual en _do_reset_indicator {section_name}: {e}")
-      
+        # ✅ ACTUALIZAR TIMESTAMP PRIMERO
+        current_time = time.time()
+        self.last_update_time[section_name] = current_time
+        
+        current_time_str = datetime.now().strftime("%H:%M:%S")
+        self.last_update_times[section_name] = current_time_str
+        
+        # ✅ INICIAR PULSO (el método ahora controla duplicados)
+        self.start_continuous_pulse(section_name)
+
     def thread_safe_reset(self, section_name):
         """✅ RESET SEGURO DESDE CUALQUIER HILO"""
         try:
