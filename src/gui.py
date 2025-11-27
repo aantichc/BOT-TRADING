@@ -16,6 +16,7 @@ import subprocess
 from config import DEFAULT_CHART_TIMEFRAME
 import time
 from concurrent.futures import ThreadPoolExecutor
+import random 
 
 # Configuración de colores
 DARK_BG = "#0f0f0f"
@@ -38,6 +39,8 @@ class ModernTradingGUI:
         self.data_queue = queue.Queue()
         self.updating = False
         self.closing = False
+        self._performance_cache = {}
+        self._cache_time = {}        
 
         # ✅ INICIALIZAR CACHE DE COMISIONES
         self._cached_fees_period = self.get_empty_fees()
@@ -46,14 +49,22 @@ class ModernTradingGUI:
         # 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 🆕 
         # ✅ NUEVAS VARIABLES PARA OPTIMIZACIÓN
         self.update_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="GUI_Update")
-        self.last_update_time = {}
+                # ✅ INICIALIZAR CON TIMESTAMP ACTUAL (no cero)
+        self.last_update_time = {
+            'metrics': time.time(),
+            'portfolio': time.time(), 
+            'tokens': time.time(),
+            'chart': time.time(),
+            'fees': time.time(),
+            'daily_change': time.time()
+        } 
         self.update_intervals = {
-            'metrics': 60,        # 1 minuto
-            'portfolio': 60,      # 1 minuto  
-            'tokens': 30,         # 30 segundos
-            'chart': 60,          # 1 minuto
-            'fees': 1800,         # 30 minutos
-            'daily_change': 60    # 1 minuto
+            'metrics': 180,       # 3 minutos
+            'portfolio': 180,     # 3 minutos  
+            'tokens': 60,         # 1 minutos
+            'chart': 180,         # 3 minutos
+            'fees': 7200,         # 2 horas
+            'daily_change': 180   # 3 minutos
         }
         self.is_updating = {key: False for key in self.update_intervals}
         self._cached_daily_changes = {}
@@ -88,7 +99,6 @@ class ModernTradingGUI:
         self.setup_styles()
         self.create_widgets()
         self.root.after(30000, self._simple_health_check) 
-        self.root.after(3000, self._test_indicators_manual)
         self.history = self.load_history()
         self.process_data_queue()
         
@@ -103,6 +113,99 @@ class ModernTradingGUI:
         # INICIALIZAR LIMPIEZA PERIÓDICA
         self.root.after(60000, self.setup_memory_cleanup)  # Empezar después de 1 minuto
 
+                        # ✅ VERIFICAR COLORES INICIALES DE INDICADORES
+        print("🎨 Verificando colores iniciales de indicadores:")
+        for section in ['tokens', 'metrics', 'portfolio', 'chart']:
+            indicator = self.section_indicators.get(section)
+            if indicator:
+                try:
+                    color = indicator.cget('foreground')
+                    print(f"   {section}: {color}")
+                except Exception as e:
+                    print(f"   {section}: Error obteniendo color - {e}")
+
+            
+                # ✅ SISTEMA DE COLA PARA INDICADORES DESDE HILOS SECUNDARIOS
+        self.indicator_actions = queue.Queue()
+        self.setup_indicator_queue_processor()
+        
+        print("🔧 Sistema de cola de indicadores inicializado")
+        
+    def setup_indicator_queue_processor(self):
+        """✅ PROCESADOR DE ACCIONES DE INDICADORES DESDE CUALQUIER HILO"""
+        def process_indicator_actions():
+            try:
+                # Procesar todas las acciones pendientes
+                while not self.indicator_actions.empty():
+                    try:
+                        action = self.indicator_actions.get_nowait()
+                        action()  # Ejecutar la acción
+                    except queue.Empty:
+                        break
+            except Exception as e:
+                print(f"❌ Error procesando cola de indicadores: {e}")
+            finally:
+                # Programar siguiente verificación (solo si no estamos cerrando)
+                if not self.closing and hasattr(self, 'root') and self.root:
+                    self.root.after(100, process_indicator_actions)
+        
+        # Iniciar el procesamiento
+        if hasattr(self, 'root') and self.root:
+            self.root.after(100, process_indicator_actions)
+
+    def update_section_indicator(self, section_name):
+        """✅ ACTIVAR INDICADOR - VERSIÓN SUPER SIMPLE"""
+        # Solo usar cola para evitar errores de threading
+        if hasattr(self, 'indicator_actions') and not self.closing:
+            self.indicator_actions.put(lambda: self._do_activate_indicator(section_name))
+
+    def _test_all_indicators(self):
+        """✅ PRUEBA VISUAL DE TODOS LOS INDICADORES"""
+        if self.closing:
+            return
+            
+        print("🧪 EJECUTANDO PRUEBA VISUAL DE INDICADORES...")
+        
+        # Activar todos los indicadores uno por uno
+        sections = ['tokens', 'metrics', 'portfolio', 'chart']
+        
+        def activate_section(index):
+            if index >= len(sections) or self.closing:
+                return
+                
+            section = sections[index]
+            print(f"🧪 Activando indicador: {section}")
+            self._do_activate_indicator(section)
+            
+            # Siguiente indicador en 2 segundos
+            if hasattr(self, 'root') and self.root:
+                self.root.after(2000, lambda: activate_section(index + 1))
+        
+        # Iniciar la secuencia
+        activate_section(0)
+
+    def setup_indicator_system(self):
+        """✅ CONFIGURAR PROCESAMIENTO SEGURO DE INDICADORES"""
+        def process_indicator_queue():
+            try:
+                # Procesar todos los comandos pendientes
+                while not self.indicator_queue.empty():
+                    try:
+                        command = self.indicator_queue.get_nowait()
+                        command()
+                    except queue.Empty:
+                        break
+            except Exception as e:
+                print(f"❌ Error procesando cola de indicadores: {e}")
+            finally:
+                # Programar siguiente verificación
+                if not self.closing and hasattr(self, 'root') and self.root:
+                    self.root.after(100, process_indicator_queue)
+        
+        # Iniciar el procesamiento
+        if hasattr(self, 'root') and self.root:
+            self.root.after(100, process_indicator_queue)        
+        
     def _simple_health_check(self):
         """✅ VERIFICACIÓN SIMPLE DE SALUD"""
         if self.closing:
@@ -116,7 +219,7 @@ class ModernTradingGUI:
             if not self.closing:
                 self.root.after(30000, self._simple_health_check)
 
-        
+       
     def _test_indicators_manual(self):
         """✅ PRUEBA MANUAL DIRECTA DE INDICADORES"""
         print("🧪 INICIANDO PRUEBA MANUAL DE INDICADORES")
@@ -168,39 +271,32 @@ class ModernTradingGUI:
                 self.log_text.delete(1.0, "500.0")  # Borrar 500 líneas drásticamente
 
     def cleanup_memory(self):
-        """Limpieza RÁPIDA cada 5 minutos - máximo rendimiento"""
+        """Limpieza más agresiva"""
         if self.closing:
             return
             
-        # SOLO LOG EN DEBUG para no saturar
-        import random
-        if random.randint(1, 10) == 1:  # Solo 10% de los cleanups
-            print("⚡ Limpieza rápida (5min) - manteniendo fluidez...")
-        
-        # 1. GARBAGE COLLECTION (instantáneo)
+        # Forzar garbage collection
         import gc
-        gc.collect()
+        collected = gc.collect()
         
-        # 2. LIMPIEZA PREVENTIVA DE QUEUE
-        if self.data_queue.qsize() > 40:
-            try:
-                # Dejar solo los 20 más recientes
-                while self.data_queue.qsize() > 20:
-                    self.data_queue.get_nowait()
-            except queue.Empty:
-                pass
+        # Limpiar cache de rendimiento viejo
+        current_time = time.time()
+        old_keys = [k for k, t in self._cache_time.items() 
+                    if current_time - t > 300]  # 5 minutos
+        for key in old_keys:
+            self._performance_cache.pop(key, None)
+            self._cache_time.pop(key, None)
         
-        # 3. LIMPIEZA SUAVE DE LOGS
-        current_lines = int(self.log_text.index('end-1c').split('.')[0])
-        if current_lines > 150:  # Más agresivo para fluidez
-            self.log_text.delete(1.0, "30.0")  # Solo 30 líneas
+        # Limpiar cola si es necesario
+        if self.data_queue.qsize() > 30:
+            self._clean_queue_aggressive()
         
-        # 4. PROGRAMAR SIGUIENTE - SIEMPRE 5 MINUTOS
+        # Programar siguiente limpieza
         if not self.closing:
-            self.root.after(300000, self.cleanup_memory)
+            self.root.after(120000, self.cleanup_memory)
 
     def _update_token_ui(self, symbol_data):
-        """✅ ACTUALIZAR UI DE TOKENS - CON DEBUG DE SEÑALES"""
+        """✅ ACTUALIZAR UI DE TOKENS - SIN RECALCULAR SEÑALES - VERSIÓN OPTIMIZADA"""
         if self.closing or not hasattr(self, 'token_frames'):
             return
             
@@ -216,11 +312,18 @@ class ModernTradingGUI:
                     print(f"      Señales: {data.get('signals', {})}")
                     print(f"      Peso: {data.get('weight', 0):.2f}")
                     
+                    # ✅ USAR DATOS YA CALCULADOS - NO RECALCULAR
+                    signals = data.get('signals', {})
+                    price = data['price']
+                    balance = data['balance']
+                    usd_value = data['usd']
+                    pct = data['pct']
+                    daily_change_str = data.get('daily_change', '+0.00%')
+                    
                     # Actualizar precio
-                    frame_data["price_label"].config(text=f"${data['price']:,.4f}")
+                    frame_data["price_label"].config(text=f"${price:,.4f}")
                     
                     # Actualizar %24H
-                    daily_change_str = data.get('daily_change', '+0.00%')
                     if isinstance(daily_change_str, str):
                         change_value_str = daily_change_str.strip('+%')
                         try:
@@ -246,15 +349,14 @@ class ModernTradingGUI:
                     
                     # Actualizar balance
                     frame_data["balance_label"].config(
-                        text=f"{data['balance']:.6f} → ${data['usd']:,.2f} ({data['pct']:.1f}%)"
+                        text=f"{balance:.6f} → ${usd_value:,.2f} ({pct:.1f}%)"
                     )
                     
-                    # ✅ ACTUALIZAR CÍRCULOS DE SEÑALES OO
-                    signals = data.get('signals', {})
+                    # ✅ ACTUALIZAR CÍRCULOS DE SEÑALES OO CON DATOS EXISTENTES
                     print(f"      Señales OO para {symbol}: {signals}")
                     
                     for tf, circle_data in frame_data["circles"].items():
-                        # Color del círculo basado en señal OO
+                        # Color del círculo basado en señal OO EXISTENTE
                         color = "gray"  # Por defecto
                         if tf in signals:
                             signal = signals[tf]
@@ -268,7 +370,7 @@ class ModernTradingGUI:
                         print(f"        {tf}: señal={signals.get(tf, 'N/A')}, color={color}")
                         circle_data['canvas'].itemconfig(circle_data['circle_id'], fill=color)
                         
-                        # Valor: % cambio de precio
+                        # Valor: % cambio de precio (esto sí se puede calcular aquí)
                         percent_change = self.get_price_change_percentage(symbol, tf)
                         
                         # Color del valor basado en % cambio
@@ -291,7 +393,7 @@ class ModernTradingGUI:
                             fg=value_color
                         )
                     
-                    # Actualizar peso y señal general
+                    # Actualizar peso y señal general CON DATOS EXISTENTES
                     weight = data.get('weight', 0)
                     if weight >= 0.8:
                         weight_color = "#00ff00"
@@ -316,8 +418,14 @@ class ModernTradingGUI:
                         font=("Arial", 9, "bold")
                     )
                     
+                    print(f"   ✅ {symbol} UI actualizado correctamente")
+                    
                 except Exception as e:
                     print(f"❌ Error actualizando {symbol} UI: {e}")
+                    import traceback
+                    traceback.print_exc()
+        
+        print(f"✅ UI de tokens actualizada: {len(symbol_data)} símbolos procesados")
 
     def get_price_change_percentage(self, symbol, timeframe):
         """Calcula el % de cambio de precio para un timeframe específico"""
@@ -521,55 +629,38 @@ class ModernTradingGUI:
             return f"ERROR: {str(e)}"
 
     def safe_update_ui(self):
-        """✅ ACTUALIZACIÓN PRINCIPAL - CON VERIFICACIÓN DE TKINTER Y ACTIVACIÓN DE INDICADORES"""
-        # ✅ VERIFICAR SALUD DE TKINTER ANTES DE CONTINUAR
-        tk_health = self.check_tkinter_health()
-        if tk_health != "HEALTHY":
-            print(f"⏸️ Tkinter no saludable: {tk_health}, omitiendo actualización...")
-            return
-            
+        """✅ ACTUALIZACIÓN MÁS CONSERVADORA"""
         if self.closing:
             return
-            
-        # ✅ VERIFICACIÓN BÁSICA
+        
+      
+        # ✅ VERIFICAR BOT PRIMERO
         if not self.bot or not hasattr(self.bot, 'running') or not self.bot.running:
             if not self.closing:
-                self.root.after(10000, self.safe_update_ui)
+                self.root.after(30000, self.safe_update_ui)  # 30 segundos si bot no corre
             return
         
         current_time = time.time()
         
-        # ✅ ACTIVAR INDICADOR DE ACTUALIZACIÓN GENERAL AL INICIAR
-        self.update_section_indicator('metrics')
+        # ✅ ACTUALIZACIONES MÁS ESPACIADAS
+        updates_scheduled = 0
         
-        # ✅ ACTUALIZACIONES CON VERIFICACIÓN DE TKINTER
-        if self._should_update('tokens', current_time):
-            print("🔄 Programando actualización de tokens...")
-            # ✅ ACTIVAR INDICADOR ANTES DE PROGRAMAR LA TAREA
-            self.update_section_indicator('tokens')
+        if self._should_update('tokens', current_time) and updates_scheduled < 2:
             self._schedule_background_task(self._update_tokens_background)
-        
-        if self._should_update('metrics', current_time):
-            print("🔄 Programando actualización de métricas...")
-            # ✅ ACTIVAR INDICADOR ANTES DE PROGRAMAR LA TAREA  
-            self.update_section_indicator('metrics')
+            updates_scheduled += 1
+            
+        if self._should_update('metrics', current_time) and updates_scheduled < 2:  
             self._schedule_background_task(self._update_metrics_background)
-        
-        if self._should_update('portfolio', current_time):
-            print("🔄 Programando actualización de portfolio...")
-            # ✅ ACTIVAR INDICADOR ANTES DE PROGRAMAR LA TAREA
-            self.update_section_indicator('portfolio')
+            updates_scheduled += 1
+            
+        if self._should_update('portfolio', current_time) and updates_scheduled < 2:
             self._schedule_background_task(self._update_portfolio_background)
-        
-        if self._should_update('chart', current_time):
-            print("🔄 Programando actualización de gráfico...")
-            # ✅ ACTIVAR INDICADOR ANTES DE PROGRAMAR LA TAREA
-            self.update_section_indicator('chart')
-            self._schedule_background_task(self._update_chart_background)
-        
-        # ✅ PROGRAMAR SIGUIENTE CON VERIFICACIÓN
-        if not self.closing and tk_health == "HEALTHY":
-            self.root.after(10000, self.safe_update_ui)
+            updates_scheduled += 1
+            
+        # ✅ PROGRAMAR SIGUIENTE CON INTERVALO MÁS LARGO
+        next_interval = 30000 if updates_scheduled > 0 else 15000  # 30s o 15s
+        if not self.closing:
+            self.root.after(next_interval, self.safe_update_ui)
 
     def safe_start_updates(self):
         """Iniciar actualizaciones de forma segura después de que el loop esté activo"""
@@ -925,76 +1016,68 @@ class ModernTradingGUI:
         if hasattr(self, 'tooltip'):
             self.tooltip.destroy()
 
-    def update_section_indicator(self, section_name):
-        """✅ ACTUALIZACIÓN DE INDICADOR - VERSIÓN THREAD-SAFE"""
+    def _do_activate_indicator(self, section_name):
+        """✅ ACTIVACIÓN DIRECTA EN HILO PRINCIPAL"""
+        if self.closing:
+            return
+            
+        indicator = self.section_indicators.get(section_name)
+        if indicator and indicator.winfo_exists():
+            try:
+                # CAMBIAR COLOR A AMARILLO
+                indicator.config(fg=WARNING_COLOR)
+                
+                # ACTUALIZAR TIMESTAMP
+                current_time = datetime.now().strftime("%H:%M:%S")
+                self.last_update_times[section_name] = current_time
+                
+                # PROGRAMAR RESET EN 5 SEGUNDOS
+                self.root.after(5000, lambda: self._do_reset_indicator(section_name))
+                
+                print(f"   🟡 Indicador {section_name} ACTIVADO")
+                
+            except Exception as e:
+                print(f"❌ Error visual en _do_activate_indicator {section_name}: {e}")
+
+    def _do_reset_indicator(self, section_name):
+        """✅ RESET DIRECTO EN HILO PRINCIPAL"""
+        if self.closing:
+            return
+            
+        indicator = self.section_indicators.get(section_name)
+        if indicator and indicator.winfo_exists():
+            try:
+                indicator.config(fg=TEXT_SECONDARY)
+                print(f"   ⚪ Indicador {section_name} RESETEADO")
+            except Exception as e:
+                print(f"❌ Error visual en _do_reset_indicator {section_name}: {e}")
+      
+    def thread_safe_reset(self, section_name):
+        """✅ RESET SEGURO DESDE CUALQUIER HILO"""
         try:
-            if self.closing or not hasattr(self, 'root') or not self.root:
+            if self.closing:
                 return
                 
-            # ✅ VERIFICAR SI ESTAMOS EN EL HILO PRINCIPAL
-            if hasattr(self.root, 'tk') and hasattr(self.root.tk, 'call'):
+            def safe_reset_operation():
                 try:
-                    # Intentar una operación simple de Tkinter para verificar el hilo
-                    self.root.tk.call('info', 'exists', '.')
-                    # ✅ ESTAMOS EN HILO PRINCIPAL - ejecutar directamente
-                    self._activate_indicator_simple(section_name)
-                except RuntimeError as e:
-                    if "main thread is not in main loop" in str(e):
-                        # ✅ ESTAMOS EN HILO SECUNDARIO - usar after de forma segura
-                        def safe_activate():
-                            if not self.closing and hasattr(self, 'root') and self.root:
-                                try:
-                                    self._activate_indicator_simple(section_name)
-                                except:
-                                    pass
-                        self.root.after(0, safe_activate)
-                    else:
-                        raise e
-            else:
-                print(f"⚠️ Tkinter no disponible para indicador {section_name}")
+                    if self.closing or not hasattr(self, 'root') or not self.root:
+                        return
+                        
+                    indicator = self.section_indicators.get(section_name)
+                    if indicator and indicator.winfo_exists():
+                        indicator.config(fg=TEXT_SECONDARY)
+                        print(f"   ⚪ Indicador {section_name} RESETEADO visualmente")
+                        
+                except Exception as e:
+                    if "main thread is not in main loop" not in str(e) and "has been destroyed" not in str(e):
+                        print(f"❌ Error en safe_reset_operation {section_name}: {e}")
+            
+            # ✅ EJECUTAR EN HILO PRINCIPAL
+            if hasattr(self, 'root') and self.root:
+                self.root.after(0, safe_reset_operation)
                 
         except Exception as e:
-            if "main thread is not in main loop" not in str(e):
-                print(f"❌ Error en update_section_indicator {section_name}: {e}")
-
-    def is_main_thread(self):
-        """Verifica si estamos en el hilo principal de Tkinter"""
-        try:
-            if hasattr(self, 'root') and self.root and hasattr(self.root, 'tk'):
-                self.root.tk.call('info', 'exists', '.')
-                return True
-        except RuntimeError as e:
-            if "main thread is not in main loop" in str(e):
-                return False
-        return False
-
-    def _activate_indicator_simple(self, section_name):
-        """✅ ACTIVAR INDICADOR - SOLO PUNTO SIN TEXTO"""
-        if self.closing:
-            return
-            
-        indicator = self.section_indicators.get(section_name)
-        
-        if indicator:
-            indicator.config(fg=WARNING_COLOR)
-            
-            # ✅ ACTUALIZAR TIMESTAMP (opcional, para tooltips)
-            current_time = datetime.now().strftime("%H:%M:%S")
-            self.last_update_times[section_name] = current_time
-            
-            # ✅ PROGRAMAR RESET
-            self.root.after(5000, self._reset_indicator_simple, section_name)
-    
-    def _reset_indicator_simple(self, section_name):
-        """✅ RESETEAR INDICADOR - VERSIÓN QUE SÍ FUNCIONA"""
-        
-        if self.closing:
-            return
-            
-        indicator = self.section_indicators.get(section_name)
-        
-        if indicator:
-            indicator.config(fg=TEXT_SECONDARY)
+            print(f"❌ Error en thread_safe_reset {section_name}: {e}")
 
     def _on_timeframe_change(self, event=None):
         """Actualizar gráfico cuando cambia el timeframe"""
@@ -1158,33 +1241,50 @@ class ModernTradingGUI:
         return card
 
     def calculate_all_tokens_daily_change(self):
-        """Calcula cambios diarios para todos los tokens de una vez (más eficiente)"""
+        """✅ CALCULA CAMBIOS DIARIOS DE FORMA EFICIENTE Y CON DEBUG"""
         try:
-            # Obtener todos los tickers de una sola llamada a la API
+            print("   📈 Calculando cambios diarios para todos los tokens...")
+            
+            # Obtener todos los tickers de una sola llamada
             all_tickers = self.bot.client.get_ticker()
+            print(f"   📊 Se obtuvieron {len(all_tickers)} tickers")
             
             daily_changes = {}
+            symbols_found = 0
+            
             for ticker in all_tickers:
                 symbol = ticker['symbol']
+                # ✅ FILTRAR SOLO LOS SÍMBOLOS QUE NOS INTERESAN
                 if symbol in self.token_frames:
                     if 'priceChangePercent' in ticker:
                         price_change_percent = float(ticker['priceChangePercent'])
                         sign = "+" if price_change_percent >= 0 else ""
                         daily_changes[symbol] = f"{sign}{price_change_percent:.2f}%"
+                        symbols_found += 1
+                        print(f"   ✅ {symbol}: {daily_changes[symbol]}")
                     else:
                         daily_changes[symbol] = "+0.00%"
+                        print(f"   ⚠️ {symbol}: sin datos, usando 0.00%")
             
-            # Asegurar que todos los símbolos tengan un valor
+            # ✅ ASEGURAR QUE TODOS LOS SÍMBOLOS TENGAN VALOR
+            missing_symbols = []
             for symbol in self.token_frames.keys():
                 if symbol not in daily_changes:
                     daily_changes[symbol] = "+0.00%"
+                    missing_symbols.append(symbol)
             
+            if missing_symbols:
+                print(f"   ⚠️ Símbolos sin datos: {missing_symbols}")
+                
+            print(f"   📈 Cambios diarios calculados: {symbols_found}/{len(self.token_frames)} símbolos")
             return daily_changes
-            
+                
         except Exception as e:
-            print(f"Error calculando cambios diarios: {e}")
-            # Devolver valores por defecto para todos los símbolos
-            return {symbol: "+0.00%" for symbol in self.token_frames.keys()}
+            print(f"   ❌ Error calculando cambios diarios: {e}")
+            # Devolver valores por defecto
+            default_changes = {symbol: "+0.00%" for symbol in self.token_frames.keys()}
+            print(f"   ⚠️ Usando valores por defecto: {default_changes}")
+            return default_changes
 
     def load_history(self):
         """Carga el historial y comprime datos antiguos"""
@@ -1361,7 +1461,7 @@ class ModernTradingGUI:
 
     def setup_memory_cleanup(self):
         """Limpieza periódica de memoria"""
-        self.root.after(300000, self.cleanup_memory)  # Cada 5 minutos
+        self.root.after(120000, self.cleanup_memory)  # Cada 2 minutos
 
     def apply_change_colors(self, metrics):
         """Aplica colores según cambios positivos/negativos y comisiones"""
@@ -1439,24 +1539,36 @@ class ModernTradingGUI:
         
         return should_update
 
+
     def _update_tokens_background(self):
-        """✅ ACTUALIZACIÓN DE TOKENS - PROCESAR TODOS LOS TOKENS"""
+        """✅ ACTUALIZACIÓN DE TOKENS CON INDICADORES"""
         print("🔄 _update_tokens_background INICIADO")
         
         if self.closing or not self.bot:
-            print(f"   ❌ No se ejecuta: closing={self.closing}, bot={self.bot is not None}")
             return
             
         if self.is_updating['tokens']:
-            print("   ⏭️ Actualización de tokens ya en progreso, omitiendo...")
             return
             
         self.is_updating['tokens'] = True
         try:
+                # ✅ ACTIVAR INDICADOR CON MANEJO DE ERRORES
+            try:
+                self.update_section_indicator('tokens')
+            except Exception as e:
+                print(f"   ⚠️ Error activando indicador (no crítico): {e}")
+                
+            # ✅ ACTIVAR INDICADOR AL INICIAR
+            self.update_section_indicator('tokens')
+            print("   ✅ Indicador de tokens activado")
             
             symbol_data = {}
             
-            # ✅ PROCESAR TODOS LOS TOKENS, NO SOLO 3
+            # ✅ OBTENER CAMBIOS DIARIOS PRIMERO
+            print("   📊 Obteniendo cambios diarios...")
+            daily_changes = self.calculate_all_tokens_daily_change()
+            
+            # ✅ PROCESAR TOKENS
             all_symbols = list(self.token_frames.keys())
             print(f"   🔍 Procesando {len(all_symbols)} tokens: {all_symbols}")
             
@@ -1464,7 +1576,7 @@ class ModernTradingGUI:
                 try:
                     print(f"   📊 Obteniendo datos para {symbol}...")
                     
-                    # ✅ OBTENER SEÑALES OO
+                    # Obtener señales OO
                     signals = self.bot.manager.get_signals(symbol)
                     weight = self.bot.manager.calculate_weight(signals)
                     price = self.bot.account.get_current_price(symbol)
@@ -1473,8 +1585,7 @@ class ModernTradingGUI:
                     total_balance = self.bot.account.get_balance_usdc()
                     pct = (usd_value / total_balance * 100) if total_balance > 0 else 0
                     
-                    # Obtener cambio diario
-                    daily_changes = self._get_cached_daily_changes()
+                    # ✅ USAR CAMBIOS DIARIOS CALCULADOS
                     daily_change = daily_changes.get(symbol, "+0.00%")
                     
                     symbol_data[symbol] = {
@@ -1487,20 +1598,20 @@ class ModernTradingGUI:
                         'daily_change': daily_change
                     }
                     
-                    print(f"   ✅ {symbol}: precio=${price:.4f}, señales={signals}, peso={weight:.2f}")
+                    print(f"   ✅ {symbol}: precio=${price:.4f}, daily_change={daily_change}, peso={weight:.2f}")
                     
                 except Exception as e:
                     print(f"   ❌ Error en {symbol}: {e}")
                     continue
 
-            # ✅ ENVIAR DATOS AL HILO PRINCIPAL
+            # ✅ ENVIAR DATOS
             if symbol_data:
                 print(f"   📨 Enviando {len(symbol_data)} tokens a la cola de datos")
                 self.data_queue.put(("token_data", symbol_data))
-                print(f"✅ Tokens procesados: {len(symbol_data)} símbolos con señales")
+                print("✅ Tokens procesados con cambios diarios")
             else:
                 print("⚠️ No se pudieron obtener datos de tokens")
-            
+                
         except Exception as e:
             print(f"❌ Error crítico en _update_tokens_background: {e}")
             import traceback
@@ -1508,7 +1619,7 @@ class ModernTradingGUI:
         finally:
             self.is_updating['tokens'] = False
             self.last_update_time['tokens'] = time.time()
-            print(f"🔄 _update_tokens_background COMPLETADO - is_updating[tokens] = {self.is_updating['tokens']}")
+            print(f"🔄 _update_tokens_background COMPLETADO")
 
     def _update_metrics_background(self):
         """✅ ACTUALIZACIÓN OPTIMIZADA DE MÉTRICAS"""
@@ -1517,6 +1628,8 @@ class ModernTradingGUI:
             
         self.is_updating['metrics'] = True
         try:
+                # ✅ ACTIVAR INDICADOR
+            self.update_section_indicator('metrics')
             
             total_balance = self.bot.account.get_balance_usdc()
             
@@ -1559,6 +1672,8 @@ class ModernTradingGUI:
         
         self.is_updating['portfolio'] = True
         try:
+                        # ✅ ACTIVAR INDICADOR
+            self.update_section_indicator('portfolio')
             total_balance = self.bot.account.get_balance_usdc()
             portfolio_data = self.get_portfolio_data(total_balance)
             self.data_queue.put(("portfolio", portfolio_data))
@@ -1573,6 +1688,8 @@ class ModernTradingGUI:
             return
         self.is_updating['chart'] = True
         try:
+                        # ✅ ACTIVAR INDICADOR
+            self.update_section_indicator('chart')
             total_balance = self.bot.account.get_balance_usdc() if self.bot else 0
             self.data_queue.put(("chart_update", total_balance))
             
@@ -1605,17 +1722,16 @@ class ModernTradingGUI:
         return getattr(self, '_cached_fees', self.get_empty_fees())
 
     def process_data_queue(self):
-        """✅ PROCESAR COLA DE DATOS - CON VERIFICACIÓN DE TKINTER"""
-        # ✅ VERIFICAR TKINTER ANTES DE PROCESAR
-        tk_health = self.check_tkinter_health()
-        if tk_health != "HEALTHY":
-            return
-            
+        """Procesar cola con límite más estricto y limpieza"""
         try:
+            # Limpiar cola si tiene más de 50 elementos
+            if self.data_queue.qsize() > 50:
+                self._clean_queue_aggressive()
+                
             processed = 0
-            MAX_PROCESS = 5  # ✅ MÁS CONSERVADOR
+            MAX_PROCESS = 10  # Aumentar ligeramente
             
-            while processed < MAX_PROCESS:
+            while processed < MAX_PROCESS and not self.data_queue.empty():
                 try:
                     item = self.data_queue.get_nowait()
                     processed += 1
@@ -1640,10 +1756,7 @@ class ModernTradingGUI:
                     
         except Exception as e:
             print(f"❌ Error procesando cola: {e}")
-        finally:
-            # ✅ SOLO PROGRAMAR SIGUIENTE SI TKINTER ESTÁ SALUDABLE
-            if not self.closing and self.check_tkinter_health() == "HEALTHY":
-                self.root.after(100, self.process_data_queue)
+            self._clean_queue_aggressive()
 
     def _clean_queue_aggressive(self):
         """✅ LIMPIEZA AGRESIVA DE COLA SATURADA"""
@@ -1718,8 +1831,17 @@ class ModernTradingGUI:
         print("✅ Aplicación cerrada correctamente")
 
     def calculate_all_performance_metrics(self, total_balance):
-        """Calcula todas las métricas de rendimiento"""
-        return {
+        """Cálculos cacheados por 30 segundos"""
+        current_time = time.time()
+        cache_key = f"performance_{total_balance:.0f}"
+        
+        # Usar cache si está fresco
+        if (cache_key in self._performance_cache and 
+            current_time - self._cache_time.get(cache_key, 0) < 30):
+            return self._performance_cache[cache_key]
+        
+        # Calcular solo si es necesario
+        result = {
             'change_30m': self.calculate_period_change(minutes=30),
             'change_1h': self.calculate_period_change(hours=1),
             'change_2h': self.calculate_period_change(hours=2),
@@ -1730,6 +1852,13 @@ class ModernTradingGUI:
             'change_1m': self.calculate_period_change(days=30),
             'change_1y': self.calculate_period_change(days=365),
         }
+                
+        # Actualizar cache
+        self._performance_cache[cache_key] = result
+        self._cache_time[cache_key] = current_time
+        
+        return result
+        
 
     def calculate_period_change(self, hours=0, minutes=0, days=0):
         """Calcula cambio porcentual para cualquier período"""
@@ -1998,25 +2127,29 @@ class ModernTradingGUI:
             return {'total_balance': total_balance, 'assets': []}
 
     def _update_history(self, now, total_balance):
-        """Historial SIMPLIFICADO - solo 1 punto por minuto"""
-        # Solo agregar si ha pasado al menos 1 minuto desde el último punto
-        if self.history:
-            last_time = self.history[-1][0]
-            time_diff = (now - last_time).total_seconds()
-            if time_diff < 60:  # Menos de 1 minuto
-                return
+        """Historial más agresivo - 1 punto cada 5 minutos para datos antiguos"""
+        if not self.history:
+            self.history.append((now, total_balance))
+            return
+            
+        last_time = self.history[-1][0]
+        time_diff = (now - last_time).total_seconds()
         
-        self.history.append((now, total_balance))
+        # Para datos recientes (< 1 día): 1 punto por minuto
+        # Para datos antiguos (> 1 día): 1 punto cada 5 minutos
+        one_day_ago = now - timedelta(days=1)
+        min_interval = 300 if last_time < one_day_ago else 60
         
-        # LIMITAR A 5000 PUNTOS MÁXIMO
-        if len(self.history) > 5000:
-            self.history = self.history[-5000:]
-            print("📊 Historial recortado a 5000 puntos")
-        
-        # Guardar solo cada 10 puntos para reducir I/O
-        if len(self.history) % 10 == 0:
-            self.save_history()
-            print(f"💾 Historial guardado: {len(self.history)} puntos")
+        if time_diff >= min_interval:
+            self.history.append((now, total_balance))
+            
+            # Limitar más agresivamente
+            if len(self.history) > 2000:  # Reducir de 5000 a 2000
+                self.history = self.history[-2000:]
+                
+            # Guardar solo cada 20 puntos
+            if len(self.history) % 20 == 0:
+                self.save_history()
 
     def _update_main_chart(self, total_balance):
         """✅ GRÁFICO MEJORADO - MANEJA DATOS VACÍOS"""

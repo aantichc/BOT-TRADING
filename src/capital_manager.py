@@ -13,26 +13,25 @@ class CapitalManager:
         self.first_rebalance_done = False  # ✅ NUEVO FLAG PARA PRIMER REBALANCE
     
     def get_signals(self, symbol):
-        """✅ OBTENER SEÑALES CON DEBUG"""
+        """✅ OBTENER SEÑALES OO - CORAZÓN DEL SISTEMA DE TRADING"""
         signals = {}
-        print(f"   📡 Calculando señales OO para {symbol}...")
         
         for tf_name, tf in TIMEFRAMES.items():
             try:
+                # 1. OBTENER DATOS DE PRECIO
                 df = self.indicators.get_klines(symbol, tf)
+                
                 if not df.empty:
+                    # 2. CALCULAR SEÑAL OO (Ordenamiento Ondeulante)
                     color, _ = self.indicators.calculate_oo(df)
-                    signals[tf_name] = color
-                    print(f"      {tf_name}: {color}")
+                    signals[tf_name] = color  # ← ESTO DECIDE COMPRAR/VENDER
                 else:
-                    signals[tf_name] = "RED"
-                    print(f"      {tf_name}: SIN DATOS → RED")
+                    signals[tf_name] = "RED"  # Sin datos = NO operar
+                    
             except Exception as e:
-                signals[tf_name] = "RED"
-                print(f"      {tf_name}: ERROR → RED: {e}")
+                signals[tf_name] = "RED"  # Error = NO operar
         
-        print(f"   🎯 Señales finales para {symbol}: {signals}")
-        return signals
+        return signals  # ← SEÑALES QUE DECIDEN TRADING
     
     def calculate_weight(self, signals):
         weight = 0.0

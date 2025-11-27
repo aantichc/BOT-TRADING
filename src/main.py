@@ -43,20 +43,20 @@ def main():
         
         # ✅ LOOP PRINCIPAL ROBUSTO CON MANEJO DE EXCEPCIONES
         last_update_time = time.time()
-        update_interval = 0.05  # 50ms
+        update_interval = 1  # 1second
         
         while True:
             try:
                 current_time = time.time()
                 
-                # ✅ ACTUALIZAR GUI CADA 50ms
+                # ✅ ACTUALIZAR GUI CADA 1S
                 if current_time - last_update_time >= update_interval:
                     gui.root.update()
                     gui.process_data_queue()
                     last_update_time = current_time
                 else:
                     # ✅ PEQUEÑA PAUSA PARA NO SATURAR CPU
-                    time.sleep(0.01)
+                    time.sleep(0.1)
                     
             except tk.TclError as e:
                 if "application has been destroyed" in str(e) or "main thread is not in main loop" in str(e):
