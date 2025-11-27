@@ -370,34 +370,26 @@ class ModernTradingGUI:
             self.root.after(120000, self.cleanup_memory)
 
     def _update_token_ui(self, symbol_data):
-        """✅ ACTUALIZAR UI DE TOKENS - SIN RECALCULAR SEÑALES - VERSIÓN OPTIMIZADA"""
+        """✅ ACTUALIZAR UI DE TOKENS - LOGS REDUCIDOS"""
         if self.closing or not hasattr(self, 'token_frames'):
             return
             
+        # ✅ LOG INICIAL MÁS LIMPIO
         print(f"🎯 Actualizando UI de {len(symbol_data)} tokens...")
         
         for symbol, data in symbol_data.items():
             if symbol in self.token_frames and not self.closing:
                 frame_data = self.token_frames[symbol].data
                 try:
-                    print(f"   📊 {symbol}:")
-                    print(f"      Precio: ${data['price']:.4f}")
-                    print(f"      Balance: {data['balance']:.6f}")
-                    print(f"      Señales: {data.get('signals', {})}")
-                    print(f"      Peso: {data.get('weight', 0):.2f}")
-                    
-                    # ✅ USAR DATOS YA CALCULADOS - NO RECALCULAR
+                    # ✅ SOLO LOG ESENCIAL - SEÑALES OO
                     signals = data.get('signals', {})
-                    price = data['price']
-                    balance = data['balance']
-                    usd_value = data['usd']
-                    pct = data['pct']
+                    print(f"   📊 {symbol}: {signals}")
+                    
+                    # Actualizar precio (sin log)
+                    frame_data["price_label"].config(text=f"${data['price']:,.4f}")
+                    
+                    # Actualizar %24H (sin log)
                     daily_change_str = data.get('daily_change', '+0.00%')
-                    
-                    # Actualizar precio
-                    frame_data["price_label"].config(text=f"${price:,.4f}")
-                    
-                    # Actualizar %24H
                     if isinstance(daily_change_str, str):
                         change_value_str = daily_change_str.strip('+%')
                         try:
@@ -421,16 +413,14 @@ class ModernTradingGUI:
                         fg=change_color
                     )
                     
-                    # Actualizar balance
+                    # Actualizar balance (sin log)
                     frame_data["balance_label"].config(
-                        text=f"{balance:.6f} → ${usd_value:,.2f} ({pct:.1f}%)"
+                        text=f"{data['balance']:.6f} → ${data['usd']:,.2f} ({data['pct']:.1f}%)"
                     )
                     
-                    # ✅ ACTUALIZAR CÍRCULOS DE SEÑALES OO CON DATOS EXISTENTES
-                    print(f"      Señales OO para {symbol}: {signals}")
-                    
+                    # ✅ ACTUALIZAR CÍRCULOS DE SEÑALES OO (CON LOG REDUCIDO)
                     for tf, circle_data in frame_data["circles"].items():
-                        # Color del círculo basado en señal OO EXISTENTE
+                        # Color del círculo basado en señal OO
                         color = "gray"  # Por defecto
                         if tf in signals:
                             signal = signals[tf]
@@ -441,10 +431,9 @@ class ModernTradingGUI:
                             elif signal == "RED":
                                 color = "#ff4444"
                         
-                        print(f"        {tf}: señal={signals.get(tf, 'N/A')}, color={color}")
                         circle_data['canvas'].itemconfig(circle_data['circle_id'], fill=color)
                         
-                        # Valor: % cambio de precio (esto sí se puede calcular aquí)
+                        # Valor: % cambio de precio (sin log)
                         percent_change = self.get_price_change_percentage(symbol, tf)
                         
                         # Color del valor basado en % cambio
@@ -467,7 +456,7 @@ class ModernTradingGUI:
                             fg=value_color
                         )
                     
-                    # Actualizar peso y señal general CON DATOS EXISTENTES
+                    # Actualizar peso y señal general (sin log)
                     weight = data.get('weight', 0)
                     if weight >= 0.8:
                         weight_color = "#00ff00"
@@ -492,14 +481,14 @@ class ModernTradingGUI:
                         font=("Arial", 9, "bold")
                     )
                     
-                    print(f"   ✅ {symbol} UI actualizado correctamente")
+                    # ✅ LOG FINAL MÁS LIMPIO
+                    print(f"   ✅ {symbol} UI actualizado")
                     
                 except Exception as e:
                     print(f"❌ Error actualizando {symbol} UI: {e}")
-                    import traceback
-                    traceback.print_exc()
         
-        print(f"✅ UI de tokens actualizada: {len(symbol_data)} símbolos procesados")
+        # ✅ LOG FINAL RESUMIDO
+        print(f"✅ UI actualizada: {len(symbol_data)} tokens")
 
     def get_price_change_percentage(self, symbol, timeframe):
         """Calcula el % de cambio de precio para un timeframe específico"""
@@ -1428,50 +1417,37 @@ class ModernTradingGUI:
         return card
 
     def calculate_all_tokens_daily_change(self):
-        """✅ CALCULA CAMBIOS DIARIOS DE FORMA EFICIENTE Y CON DEBUG"""
+        """✅ CAMBIOS DIARIOS - LOGS REDUCIDOS"""
         try:
-            print("   📈 Calculando cambios diarios para todos los tokens...")
-            
-            # Obtener todos los tickers de una sola llamada
+            # ✅ LOG INICIAL REDUCIDO
             all_tickers = self.bot.client.get_ticker()
-            print(f"   📊 Se obtuvieron {len(all_tickers)} tickers")
             
             daily_changes = {}
             symbols_found = 0
             
             for ticker in all_tickers:
                 symbol = ticker['symbol']
-                # ✅ FILTRAR SOLO LOS SÍMBOLOS QUE NOS INTERESAN
                 if symbol in self.token_frames:
                     if 'priceChangePercent' in ticker:
                         price_change_percent = float(ticker['priceChangePercent'])
                         sign = "+" if price_change_percent >= 0 else ""
                         daily_changes[symbol] = f"{sign}{price_change_percent:.2f}%"
                         symbols_found += 1
-                        print(f"   ✅ {symbol}: {daily_changes[symbol]}")
                     else:
                         daily_changes[symbol] = "+0.00%"
-                        print(f"   ⚠️ {symbol}: sin datos, usando 0.00%")
             
-            # ✅ ASEGURAR QUE TODOS LOS SÍMBOLOS TENGAN VALOR
-            missing_symbols = []
+            # ✅ ASEGURAR VALORES (SIN LOG)
             for symbol in self.token_frames.keys():
                 if symbol not in daily_changes:
                     daily_changes[symbol] = "+0.00%"
-                    missing_symbols.append(symbol)
             
-            if missing_symbols:
-                print(f"   ⚠️ Símbolos sin datos: {missing_symbols}")
-                
-            print(f"   📈 Cambios diarios calculados: {symbols_found}/{len(self.token_frames)} símbolos")
+            # ✅ LOG FINAL RESUMIDO
+            print(f"   📈 Cambios diarios: {symbols_found}/{len(self.token_frames)} tokens")
             return daily_changes
                 
         except Exception as e:
-            print(f"   ❌ Error calculando cambios diarios: {e}")
-            # Devolver valores por defecto
-            default_changes = {symbol: "+0.00%" for symbol in self.token_frames.keys()}
-            print(f"   ⚠️ Usando valores por defecto: {default_changes}")
-            return default_changes
+            print(f"   ❌ Error cambios diarios: {e}")
+            return {symbol: "+0.00%" for symbol in self.token_frames.keys()}
 
     def load_history(self):
         """Carga el historial y comprime datos antiguos"""
@@ -1728,8 +1704,8 @@ class ModernTradingGUI:
 
 
     def _update_tokens_background(self):
-        """✅ ACTUALIZACIÓN DE TOKENS CON INDICADORES"""
-        print("🔄 _update_tokens_background INICIADO")
+        """✅ ACTUALIZACIÓN DE TOKENS - LOGS REDUCIDOS"""
+        print("🔄 Actualizando tokens...")
         
         if self.closing or not self.bot:
             return
@@ -1739,31 +1715,20 @@ class ModernTradingGUI:
             
         self.is_updating['tokens'] = True
         try:
-                # ✅ ACTIVAR INDICADOR CON MANEJO DE ERRORES
-            try:
-                self.update_section_indicator('tokens')
-            except Exception as e:
-                print(f"   ⚠️ Error activando indicador (no crítico): {e}")
-                
-            # ✅ ACTIVAR INDICADOR AL INICIAR
+            # ✅ ACTIVAR INDICADOR (LOG REDUCIDO)
             self.update_section_indicator('tokens')
-            print("   ✅ Indicador de tokens activado")
             
             symbol_data = {}
             
-            # ✅ OBTENER CAMBIOS DIARIOS PRIMERO
-            print("   📊 Obteniendo cambios diarios...")
+            # ✅ OBTENER CAMBIOS DIARIOS (LOG REDUCIDO)
             daily_changes = self.calculate_all_tokens_daily_change()
             
-            # ✅ PROCESAR TOKENS
+            # ✅ PROCESAR TOKENS (LOG REDUCIDO)
             all_symbols = list(self.token_frames.keys())
-            print(f"   🔍 Procesando {len(all_symbols)} tokens: {all_symbols}")
             
             for symbol in all_symbols:
                 try:
-                    print(f"   📊 Obteniendo datos para {symbol}...")
-                    
-                    # Obtener señales OO
+                    # ✅ SOLO LOG ESENCIAL POR TOKEN
                     signals = self.bot.manager.get_signals(symbol)
                     weight = self.bot.manager.calculate_weight(signals)
                     price = self.bot.account.get_current_price(symbol)
@@ -1772,7 +1737,6 @@ class ModernTradingGUI:
                     total_balance = self.bot.account.get_balance_usdc()
                     pct = (usd_value / total_balance * 100) if total_balance > 0 else 0
                     
-                    # ✅ USAR CAMBIOS DIARIOS CALCULADOS
                     daily_change = daily_changes.get(symbol, "+0.00%")
                     
                     symbol_data[symbol] = {
@@ -1785,28 +1749,25 @@ class ModernTradingGUI:
                         'daily_change': daily_change
                     }
                     
-                    print(f"   ✅ {symbol}: precio=${price:.4f}, daily_change={daily_change}, peso={weight:.2f}")
+                    # ✅ SOLO LOG RESUMIDO
+                    print(f"   ✅ {symbol}: ${price:.4f}, {daily_change}, peso:{weight:.2f}")
                     
                 except Exception as e:
-                    print(f"   ❌ Error en {symbol}: {e}")
+                    print(f"   ❌ {symbol}: {e}")
                     continue
 
-            # ✅ ENVIAR DATOS
+            # ✅ ENVIAR DATOS (LOG REDUCIDO)
             if symbol_data:
-                print(f"   📨 Enviando {len(symbol_data)} tokens a la cola de datos")
                 self.data_queue.put(("token_data", symbol_data))
-                print("✅ Tokens procesados con cambios diarios")
+                print(f"✅ {len(symbol_data)} tokens procesados")
             else:
-                print("⚠️ No se pudieron obtener datos de tokens")
+                print("⚠️ No se obtuvieron datos")
                 
         except Exception as e:
-            print(f"❌ Error crítico en _update_tokens_background: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"❌ Error en tokens: {e}")
         finally:
             self.is_updating['tokens'] = False
             self.last_update_time['tokens'] = time.time()
-            print(f"🔄 _update_tokens_background COMPLETADO")
 
     def _update_metrics_background(self):
         """✅ ACTUALIZACIÓN OPTIMIZADA DE MÉTRICAS"""
