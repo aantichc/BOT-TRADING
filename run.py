@@ -1,10 +1,10 @@
-# run.py - VERSIÓN CON CIERRE MEJORADO
+# run.py - ACTUALIZADO para estructura src/
 import os
 import sys
 import signal
 
-# Agregar el directorio src al path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+# Agregar el directorio actual al path para importar desde src/
+sys.path.append(os.path.dirname(__file__))
 
 def signal_handler(sig, frame):
     """Manejar Ctrl+C"""
@@ -16,13 +16,16 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     
     try:
-        from main import main as app_main
+        # Importar desde src/
+        from src.main import main as app_main
         app_main()
     except KeyboardInterrupt:
         print('\nAplicación interrumpida por el usuario')
         sys.exit(0)
     except Exception as e:
         print(f'Error: {e}')
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == '__main__':

@@ -1,8 +1,13 @@
-# main.py - VERSIÓN COMPLETAMENTE CORREGIDA
+# src/main.py - VERSIÓN COMPLETAMENTE CORREGIDA
 import logging
 import time
 import sys
 import tkinter as tk
+import os
+
+# Agregar el directorio src al path para imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -10,6 +15,7 @@ def main():
     print("🚀 Iniciando aplicación...")
     
     try:
+        # ✅ IMPORTAR DESDE EL MISMO DIRECTORIO
         from trading_bot import TradingBot
         from gui import ModernTradingGUI
         

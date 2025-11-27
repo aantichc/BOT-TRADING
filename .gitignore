@@ -1,10 +1,9 @@
-# Archivo .gitignore para Trading Bot
-
-# Entorno virtual
-venv/
-env/
-.venv/
-ENV/
+# API Keys y configuraciones sensibles
+.env
+.env.*
+config_secret.py
+*_secret.py
+*.env.local
 
 # Archivos de Python
 __pycache__/
@@ -24,133 +23,25 @@ parts/
 sdist/
 var/
 wheels/
-pip-wheel-metadata/
-share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST
 
-# Archivos de configuración sensibles
-config.py
-*_key.txt
-*_secret.txt
-*.key
-*.pem
-*.p12
-*.crt
-*.cer
-
-# Archivos de datos de la aplicación
-capital_history.json
-capital_chart.png
-trading_log.txt
+# Logs
 *.log
+logs/
+
+# Datos de la aplicación
+capital_history.json
+*.json
 *.csv
-*.json (excepto configuraciones)
-!config_example.json
 
-# Binance API (si usas alguna librería local)
-binance/
-
-# Archivos del sistema
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Archivos de IDE
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
-# Archivos temporales
-*.tmp
-*.temp
-.cache/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# Entornos de testing
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-
-# Archivos de sistema operativo
-# Windows
-[Tt]humbs.db
-*.lnk
-
-# macOS
-*.DS_Store
-.AppleDouble
-.LSOverride
-
-# Linux
-*~
-
-# Archivos de backup
-*.bak
-*.backup
-
-# Archivos de database (si los usas)
-*.db
-*.sqlite
-*.sqlite3
-
-# Logs personales
-logs/
-*.log
-
-# Archivos de trading personalizados
-user_settings.py
-personal_config.py
-
-# Directorio de datos descargados
-data/
-historical_data/
-
-# Certificados SSL
-*.csr
-*.der
-
-# Archivos de exchange (si descargas algo)
-exchange_data/
-
-# Archivos de estrategias personales
-strategies/personal_*.py
-strategies/backtest_*.py
-
-# Backtesting results
-backtest_results/
-optimization_results/
-
-# PyInstaller
-*.spec
-dist/
-build/
-
-# Entornos virtuales específicos
-python_env/
-
-# Archivos de API keys (cualquier formato)
-*api_key*
-*secret_key*
-*private_key*
-*password*
-
-# Configuración local
-local_config.py
-.env
-.env.local
-.env.*.local
-
-# Archivos de sesión
-session_*
+# Sistema
+.DS_Store
+Thumbs.db
