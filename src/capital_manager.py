@@ -1,6 +1,7 @@
 # Archivo: capital_manager.py - VERSIÓN CON REBALANCE AUTOMÁTICO INICIAL
 from config import TIMEFRAMES, SYMBOLS, TIMEFRAME_WEIGHTS, MIN_TRADE_DIFF
 from datetime import datetime
+import time  # ✅ IMPORT AGREGADO
 
 class CapitalManager:
     def __init__(self, account, indicators, gui=None):
@@ -10,10 +11,75 @@ class CapitalManager:
         self.base_allocation = 1.0 / len(SYMBOLS)
         self.last_weights = {s: 0.0 for s in SYMBOLS}
         self.SYMBOLS = SYMBOLS
-        self.first_rebalance_done = False  # ✅ NUEVO FLAG PARA PRIMER REBALANCE
-    
+        self.first_rebalance_done = False
+        self.signal_cooldowns = {}
+        self.COOLDOWN_MINUTES = 10
+        
+    def should_allow_signal_change(self, symbol, timeframe, new_signal):
+        key = (symbol, timeframe)
+        current_time = time.time()
+        
+        if key not in self.signal_cooldowns:
+            self.signal_cooldowns[key] = {
+                'last_signal': new_signal,
+                'last_change': current_time,
+                'original_signal': new_signal,
+                'change_count': 1
+            }
+            print(f"✅ Primer registro: {symbol} {timeframe} → {new_signal}")
+            return True
+        
+        cooldown_data = self.signal_cooldowns[key]
+        last_signal = cooldown_data['last_signal']
+        original_signal = cooldown_data['original_signal']
+        last_change = cooldown_data['last_change']
+        
+        # Verificar si pasó cooldown
+        time_since_change = current_time - last_change
+        cooldown_remaining = (self.COOLDOWN_MINUTES * 60) - time_since_change
+        
+        if cooldown_remaining <= 0:
+            # Cooldown completado - reiniciar
+            cooldown_data['last_signal'] = new_signal
+            cooldown_data['last_change'] = current_time
+            cooldown_data['original_signal'] = new_signal
+            cooldown_data['change_count'] = 1
+            print(f"✅ Cooldown completado: {symbol} {timeframe} → {new_signal}")
+            return True
+        
+        # 🔄 DURANTE COOLDOWN - Lógica restrictiva
+        is_same_signal = (new_signal == last_signal)
+        is_natural_progression = self.is_natural_progression(last_signal, new_signal)
+        
+        if is_same_signal:
+            cooldown_data['last_signal'] = new_signal
+            print(f"✅ Misma señal durante cooldown: {symbol} {timeframe} {new_signal}")
+            return True
+        elif is_natural_progression:
+            cooldown_data['last_signal'] = new_signal
+            cooldown_data['change_count'] += 1
+            print(f"✅ Progresión natural: {symbol} {timeframe} {last_signal} → {new_signal} "
+                f"(cambios: {cooldown_data['change_count']})")
+            return True
+        else:
+            # 🚫 BLOQUEADO - Cambio no permitido durante cooldown
+            print(f"🚫 Cooldown bloqueado: {symbol} {timeframe} {last_signal} → {new_signal} "
+                f"(cooldown restante: {cooldown_remaining:.0f}s)")
+            return False
+            
+    def is_natural_progression(self, current_signal, new_signal):
+        """Define qué se considera evolución natural permitida durante cooldown"""
+        natural_transitions = {
+            'RED': ['YELLOW'],     # Rojo solo puede ir a Amarillo
+            'YELLOW': ['GREEN'],   # Amarillo solo puede ir a Verde  
+            'GREEN': ['YELLOW']    # Verde solo puede ir a Amarillo
+        }
+        
+        return (current_signal in natural_transitions and 
+                new_signal in natural_transitions[current_signal])
+     
     def get_signals(self, symbol):
-        """✅ OBTENER SEÑALES OO - CORAZÓN DEL SISTEMA DE TRADING"""
+        """✅ OBTENER SEÑALES OO CON COOLDOWN INTELIGENTE"""
         signals = {}
         
         for tf_name, tf in TIMEFRAMES.items():
@@ -22,16 +88,22 @@ class CapitalManager:
                 df = self.indicators.get_klines(symbol, tf)
                 
                 if not df.empty:
-                    # 2. CALCULAR SEÑAL OO (Ordenamiento Ondeulante)
+                    # 2. CALCULAR SEÑAL OO
                     color, _ = self.indicators.calculate_oo(df)
-                    signals[tf_name] = color  # ← ESTO DECIDE COMPRAR/VENDER
+                    
+                    # 3. ✅ APLICAR COOLDOWN INTELIGENTE
+                    if not self.should_allow_signal_change(symbol, tf_name, color):
+                        signals[tf_name] = "YELLOW"  # Señal neutral durante cooldown
+                        print(f"⏳ Cooldown {symbol} {tf_name}: bloqueado revertir a {color}")
+                    else:
+                        signals[tf_name] = color
                 else:
-                    signals[tf_name] = "RED"  # Sin datos = NO operar
+                    signals[tf_name] = "RED"
                     
             except Exception as e:
-                signals[tf_name] = "RED"  # Error = NO operar
+                signals[tf_name] = "RED"
         
-        return signals  # ← SEÑALES QUE DECIDEN TRADING
+        return signals
     
     def calculate_weight(self, signals):
         weight = 0.0
@@ -107,7 +179,7 @@ class CapitalManager:
                                 actions.append(msg)
                                 if self.gui:
                                     self.gui.log_trade(msg, 'RED')
-                                continue  # Saltar esta compra
+                                continue
                         
                         # ✅ EJECUTAR COMPRA CON MONTO AJUSTADO
                         success, msg = self.account.buy_market(symbol, diff_usd)
@@ -142,6 +214,7 @@ class CapitalManager:
         
         return actions if actions else "No ajustes necesarios"
 
+    def weight_to_signal(self, weight):
         """Convierte peso numérico a texto de señal"""
         if weight >= 0.8:
             return "STRONG_BUY"
