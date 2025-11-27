@@ -629,45 +629,49 @@ class ModernTradingGUI:
             return f"ERROR: {str(e)}"
 
     def safe_update_ui(self):
-        """✅ ACTUALIZACIÓN MÁS CONSERVADORA"""
+        """✅ ACTUALIZACIÓN CORRECTA - solo activar indicadores cuando realmente se actualice"""
         if self.closing:
             return
-        
-      
-        # ✅ VERIFICAR BOT PRIMERO
+            
+        # ✅ VERIFICACIÓN BÁSICA
         if not self.bot or not hasattr(self.bot, 'running') or not self.bot.running:
             if not self.closing:
-                self.root.after(30000, self.safe_update_ui)  # 30 segundos si bot no corre
+                self.root.after(30000, self.safe_update_ui)
             return
         
         current_time = time.time()
         
-                # ✅ ACTIVAR INDICADOR DE ACTUALIZACIÓN GENERAL
-        self.update_section_indicator('metrics')
+        # ❌ ELIMINAR ESTA LÍNEA:
+        # self.update_section_indicator('metrics')
         
-        # ✅ ACTUALIZACIONES MÁS ESPACIADAS
+        # ✅ SOLO ACTIVAR INDICADORES CUANDO REALMENTE SE ACTUALICE
         updates_scheduled = 0
         
         if self._should_update('tokens', current_time) and updates_scheduled < 2:
+            print("🔄 Programando actualización de tokens...")
             self._schedule_background_task(self._update_tokens_background)
             updates_scheduled += 1
             
         if self._should_update('metrics', current_time) and updates_scheduled < 2:  
+            print("🔄 Programando actualización de métricas...")
             self._schedule_background_task(self._update_metrics_background)
+            # ✅ EL INDICADOR SE ACTIVA DENTRO de _update_metrics_background
             updates_scheduled += 1
             
         if self._should_update('portfolio', current_time) and updates_scheduled < 2:
+            print("🔄 Programando actualización de portfolio...")
             self._schedule_background_task(self._update_portfolio_background)
+            # ✅ EL INDICADOR SE ACTIVA DENTRO de _update_portfolio_background
             updates_scheduled += 1
             
-        # ✅ AGREGAR ACTUALIZACIÓN DEL GRÁFICO
         if self._should_update('chart', current_time) and updates_scheduled < 2:
             print("🔄 Programando actualización de gráfico...")
             self._schedule_background_task(self._update_chart_background)
+            # ✅ EL INDICADOR SE ACTIVA DENTRO de _update_chart_background
             updates_scheduled += 1
-            
-        # ✅ PROGRAMAR SIGUIENTE CON INTERVALO MÁS LARGO
-        next_interval = 30000 if updates_scheduled > 0 else 15000  # 30s o 15s
+        
+        # ✅ PROGRAMAR SIGUIENTE
+        next_interval = 30000 if updates_scheduled > 0 else 15000
         if not self.closing:
             self.root.after(next_interval, self.safe_update_ui)
 
