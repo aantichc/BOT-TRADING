@@ -1714,7 +1714,7 @@ class ModernTradingGUI:
                     }
                     
                     # ✅ SOLO LOG RESUMIDO
-                    print(f"   ✅ {symbol}: ${price:.4f}, {daily_change}, peso:{weight:.2f}")
+                    # print(f"   ✅ {symbol}: ${price:.4f}, {daily_change}, peso:{weight:.2f}")
                     
                 except Exception as e:
                     print(f"   ❌ {symbol}: {e}")
