@@ -879,23 +879,45 @@ class ModernTradingGUI:
         tk.Label(capital_container, text="📈 PERFORMANCE", bg=DARK_BG, fg=TEXT_SECONDARY,
                 font=("Arial", 9, "bold")).pack(anchor="w", pady=(0, 5))
 
-        # Fila 1: Performance capital corto
+        # Fila 1: Performance capital corto - DISTRIBUCIÓN UNIFORME
         capital_short_frame = tk.Frame(capital_container, bg=DARK_BG)
         capital_short_frame.pack(fill=tk.X, pady=(0, 5))
 
-        self.change_30m_label = self.create_compact_metric(capital_short_frame, "30m", "+0.00%", TEXT_SECONDARY)
-        self.change_1h_label = self.create_compact_metric(capital_short_frame, "1h", "+0.00%", TEXT_SECONDARY)
-        self.change_2h_label = self.create_compact_metric(capital_short_frame, "2h", "+0.00%", TEXT_SECONDARY)
-        self.change_4h_label = self.create_compact_metric(capital_short_frame, "4h", "+0.00%", TEXT_SECONDARY)
+        # Configurar distribución uniforme
+        for i in range(4):  # 4 métricas en esta fila
+            capital_short_frame.columnconfigure(i, weight=1, uniform="short_metrics")
 
-        # Fila 2: Performance capital largo
+        self.change_30m_label = self.create_compact_metric(capital_short_frame, "30m", "+0.00%", TEXT_SECONDARY)
+        self.change_30m_label.master.grid(row=0, column=0, padx=(0, 5), sticky="ew")
+
+        self.change_1h_label = self.create_compact_metric(capital_short_frame, "1h", "+0.00%", TEXT_SECONDARY)
+        self.change_1h_label.master.grid(row=0, column=1, padx=(0, 5), sticky="ew")
+
+        self.change_2h_label = self.create_compact_metric(capital_short_frame, "2h", "+0.00%", TEXT_SECONDARY)
+        self.change_2h_label.master.grid(row=0, column=2, padx=(0, 5), sticky="ew")
+
+        self.change_4h_label = self.create_compact_metric(capital_short_frame, "4h", "+0.00%", TEXT_SECONDARY)
+        self.change_4h_label.master.grid(row=0, column=3, padx=0, sticky="ew")
+
+        # Fila 2: Performance capital largo - DISTRIBUCIÓN UNIFORME
         capital_long_frame = tk.Frame(capital_container, bg=DARK_BG)
         capital_long_frame.pack(fill=tk.X, pady=(0, 10))
 
+        # Configurar distribución uniforme
+        for i in range(4):  # 4 métricas en esta fila
+            capital_long_frame.columnconfigure(i, weight=1, uniform="long_metrics")
+
         self.change_1d_label = self.create_compact_metric(capital_long_frame, "1D", "+0.00%", TEXT_SECONDARY)
+        self.change_1d_label.master.grid(row=0, column=0, padx=(0, 5), sticky="ew")
+
         self.change_1w_label = self.create_compact_metric(capital_long_frame, "1W", "+0.00%", TEXT_SECONDARY)
+        self.change_1w_label.master.grid(row=0, column=1, padx=(0, 5), sticky="ew")
+
         self.change_1m_label = self.create_compact_metric(capital_long_frame, "1M", "+0.00%", TEXT_SECONDARY)
+        self.change_1m_label.master.grid(row=0, column=2, padx=(0, 5), sticky="ew")
+
         self.change_1y_label = self.create_compact_metric(capital_long_frame, "1Y", "+0.00%", TEXT_SECONDARY)
+        self.change_1y_label.master.grid(row=0, column=3, padx=0, sticky="ew")
 
         # CONTENEDOR COMPACTO PARA COMISIONES
         fees_container = tk.Frame(metrics_frame, bg=DARK_BG)
@@ -904,14 +926,25 @@ class ModernTradingGUI:
         tk.Label(fees_container, text="💸 ESTIMATED BINANCE FEES", bg=DARK_BG, fg=TEXT_SECONDARY,
                 font=("Arial", 9, "bold")).pack(anchor="w", pady=(0, 5))
 
-        # Fila única: Comisiones por período
+        # Fila única: Comisiones por período - DISTRIBUCIÓN UNIFORME
         fees_frame = tk.Frame(fees_container, bg=DARK_BG)
         fees_frame.pack(fill=tk.X)
 
+        # Configurar distribución uniforme
+        for i in range(4):  # 4 métricas en esta fila
+            fees_frame.columnconfigure(i, weight=1, uniform="fees_metrics")
+
         self.fees_1d_label = self.create_compact_metric(fees_frame, "1D", "$0.00", DANGER_COLOR)
+        self.fees_1d_label.master.grid(row=0, column=0, padx=(0, 5), sticky="ew")
+
         self.fees_1w_label = self.create_compact_metric(fees_frame, "1W", "$0.00", DANGER_COLOR)
+        self.fees_1w_label.master.grid(row=0, column=1, padx=(0, 5), sticky="ew")
+
         self.fees_1m_label = self.create_compact_metric(fees_frame, "1M", "$0.00", DANGER_COLOR)
+        self.fees_1m_label.master.grid(row=0, column=2, padx=(0, 5), sticky="ew")
+
         self.fees_1y_label = self.create_compact_metric(fees_frame, "1Y", "$0.00", DANGER_COLOR)
+        self.fees_1y_label.master.grid(row=0, column=3, padx=0, sticky="ew")
 
         # Panel central: Gráfico principal
         chart_frame = tk.Frame(top_row, bg=DARK_BG)
@@ -1034,6 +1067,24 @@ class ModernTradingGUI:
 
         # Actualizar referencias de indicadores para incluir wallet
         self.section_indicators['portfolio'] = self.wallet_indicator
+        
+    def create_compact_metric(self, parent, timeframe, value, color):
+        """Crea métrica ultra-compacta para timeframes con ANCHO FIJO"""
+        metric_frame = tk.Frame(parent, bg=CARD_BG, relief='flat', bd=1,
+                            highlightbackground=TEXT_SECONDARY, highlightthickness=1,
+                            width=70, height=45)  # ANCHO FIJO de 70px
+        metric_frame.pack_propagate(False)  # ✅ IMPORTANTE: Mantener tamaño fijo
+        
+        # Timeframe (pequeño)
+        tk.Label(metric_frame, text=timeframe, bg=CARD_BG, fg=TEXT_SECONDARY,
+                font=("Arial", 8, "bold")).pack(pady=(5, 0))
+        
+        # Valor (compacto)
+        value_label = tk.Label(metric_frame, text=value, bg=CARD_BG, fg=color,
+                            font=("Arial", 9, "bold"))
+        value_label.pack(pady=(0, 5))
+        
+        return value_label        
 
     def start_all_continuous_pulses(self):
         """✅ INICIAR TODOS LOS PULSOS AL ARRANCAR - VERSIÓN MEJORADA"""
