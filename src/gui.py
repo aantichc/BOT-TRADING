@@ -1561,7 +1561,7 @@ class ModernTradingGUI:
                 print(f"❌ Error scheduling {func.__name__}: {e}")
 
     def log_trade(self, msg, color="white"):
-        """Agrega mensaje al log de forma thread-safe"""
+        """Agrega mensaje al log de forma thread-safe y también imprime en consola"""
         # Auto-detectar tipo de mensaje por contenido si no se especifica color
         if color == "white":
             if "COMPRA" in msg.upper() or "🟢" in msg:
@@ -1574,8 +1574,12 @@ class ModernTradingGUI:
                 color = "BLUE"
             elif "ADVERTENCIA" in msg.upper() or "⚠️" in msg:
                 color = "YELLOW"
-        
+
+        # ✅ IMPRIMIR EN CONSOLA
+        print(f"[TRADE LOG] {msg}")
+
         self.data_queue.put(("log", msg, color))
+
 
     def update_token_data(self, symbol_data):
         self.data_queue.put(("token_data", symbol_data))
