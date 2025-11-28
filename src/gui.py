@@ -845,25 +845,26 @@ class ModernTradingGUI:
         main_container = tk.Frame(self.root, bg=DARK_BG)
         main_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
 
-        # Fila superior: Métricas y Gráfico
+        # ========== FILA SUPERIOR: Metrics, Graph y Wallet ==========
         top_row = tk.Frame(main_container, bg=DARK_BG)
         top_row.pack(fill=tk.X, pady=(0, 20))
 
-        # Métricas principales - VERSIÓN COMPACTADA CON COMISIONES POR PERÍODO
-        metrics_frame = tk.Frame(top_row, bg=DARK_BG)
-        metrics_frame.pack(side=tk.LEFT, fill=tk.Y)
+        # Panel izquierdo: Métricas (compacto)
+        metrics_frame = tk.Frame(top_row, bg=DARK_BG, width=300)
+        metrics_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 20))
+        metrics_frame.pack_propagate(False)
 
-        # 🎯 HEADER DE MÉTRICAS - ASEGURAR VISIBILIDAD
+        # 🎯 HEADER DE MÉTRICAS
         metrics_header = tk.Frame(metrics_frame, bg=DARK_BG, height=30)
         metrics_header.pack(fill=tk.X)
-        metrics_header.pack_propagate(False)  # ✅ IMPORTANTE: Mantener tamaño
+        metrics_header.pack_propagate(False)
         
         tk.Label(metrics_header, text="📊 PERFORMANCE METRICS", bg=DARK_BG, fg=TEXT_COLOR,
                 font=("Arial", 12, "bold")).pack(side=tk.LEFT, pady=5)
         
-        # ✅ INDICADOR - ASEGURAR VISIBILIDAD
+        # ✅ INDICADOR
         self.metrics_indicator = tk.Label(metrics_header, text="●", fg=TEXT_SECONDARY, 
-                                        font=("Arial", 16), bg=DARK_BG, cursor="hand2")  # ✅ Tamaño aumentado
+                                        font=("Arial", 16), bg=DARK_BG, cursor="hand2")
         self.metrics_indicator.pack(side=tk.LEFT, padx=5, pady=5)
         self.section_indicators['metrics'] = self.metrics_indicator
 
@@ -912,52 +913,92 @@ class ModernTradingGUI:
         self.fees_1m_label = self.create_compact_metric(fees_frame, "1M", "$0.00", DANGER_COLOR)
         self.fees_1y_label = self.create_compact_metric(fees_frame, "1Y", "$0.00", DANGER_COLOR)
 
-        # Gráfico principal
+        # Panel central: Gráfico principal
         chart_frame = tk.Frame(top_row, bg=DARK_BG)
-        chart_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(20, 0))
+        chart_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 20))
 
-        # 🎯 HEADER DE GRÁFICO - ASEGURAR VISIBILIDAD
+        # 🎯 HEADER DE GRÁFICO
         chart_header = tk.Frame(chart_frame, bg=DARK_BG, height=30)
         chart_header.pack(fill=tk.X)
-        chart_header.pack_propagate(False)  # ✅ IMPORTANTE: Mantener tamaño
+        chart_header.pack_propagate(False)
         
         tk.Label(chart_header, text="📈 BALANCE GRAPH", bg=DARK_BG, fg=TEXT_COLOR,
                 font=("Arial", 12, "bold")).pack(side=tk.LEFT, pady=5)
         
-        # ✅ INDICADOR - ASEGURAR VISIBILIDAD
+        # ✅ INDICADOR
         self.chart_indicator = tk.Label(chart_header, text="●", fg=TEXT_SECONDARY,
-                                    font=("Arial", 16), bg=DARK_BG, cursor="hand2")  # ✅ Tamaño aumentado
+                                    font=("Arial", 16), bg=DARK_BG, cursor="hand2")
         self.chart_indicator.pack(side=tk.LEFT, padx=5, pady=5)
         self.section_indicators['chart'] = self.chart_indicator
         
-        self.fig = Figure(figsize=(10, 4), facecolor=DARK_BG)
+        self.fig = Figure(figsize=(8, 4), facecolor=DARK_BG)
         self.ax = self.fig.add_subplot(111)
         self.ax.set_facecolor(CARD_BG)
         self.canvas = FigureCanvasTkAgg(self.fig, chart_frame)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, pady=(5, 0))
 
-        # Fila inferior: Tokens y Cartera
+        # Panel derecho: Wallet (compacto)
+        wallet_frame = tk.Frame(top_row, bg=DARK_BG, width=280)
+        wallet_frame.pack(side=tk.RIGHT, fill=tk.BOTH)
+        wallet_frame.pack_propagate(False)
+
+        # 🎯 HEADER DE WALLET
+        wallet_header = tk.Frame(wallet_frame, bg=DARK_BG, height=30)
+        wallet_header.pack(fill=tk.X)
+        wallet_header.pack_propagate(False)
+        
+        tk.Label(wallet_header, text="💼 BINANCE WALLET", bg=DARK_BG, fg=TEXT_COLOR,
+                font=("Arial", 12, "bold")).pack(side=tk.LEFT, pady=5)
+        
+        # ✅ INDICADOR
+        self.wallet_indicator = tk.Label(wallet_header, text="●", fg=TEXT_SECONDARY,
+                                    font=("Arial", 16), bg=DARK_BG, cursor="hand2")
+        self.wallet_indicator.pack(side=tk.LEFT, padx=5, pady=5)
+        self.section_indicators['wallet'] = self.wallet_indicator
+
+        # Gráfico de cartera compacto
+        self.portfolio_fig = Figure(figsize=(3, 2.5), facecolor=DARK_BG)
+        self.portfolio_ax = self.portfolio_fig.add_subplot(111)
+        self.portfolio_ax.set_facecolor(CARD_BG)
+        self.portfolio_canvas = FigureCanvasTkAgg(self.portfolio_fig, wallet_frame)
+        self.portfolio_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, pady=(5, 10))
+
+        # Lista de activos compacta
+        self.portfolio_tree = ttk.Treeview(wallet_frame, columns=('Asset', 'Balance', 'USD', '%'), 
+                                        show='headings', height=6)
+        self.portfolio_tree.heading('Asset', text='SYMBOL')
+        self.portfolio_tree.heading('Balance', text='AMMOUNT')
+        self.portfolio_tree.heading('USD', text='USD')
+        self.portfolio_tree.heading('%', text='%')
+        
+        self.portfolio_tree.column('Asset', width=60)
+        self.portfolio_tree.column('Balance', width=80)
+        self.portfolio_tree.column('USD', width=80)
+        self.portfolio_tree.column('%', width=50)
+
+        self.portfolio_tree.pack(fill=tk.BOTH, expand=True)
+
+        # ========== FILA INFERIOR: Trading Signals y Logs ==========
         bottom_row = tk.Frame(main_container, bg=DARK_BG)
         bottom_row.pack(fill=tk.BOTH, expand=True)
 
-        # Panel de tokens
+        # Panel izquierdo: Trading Signals (55% del ancho)
         tokens_frame = tk.Frame(bottom_row, bg=DARK_BG)
-        tokens_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        tokens_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 20))
 
-        # 🎯 HEADER DE TOKENS - ASEGURAR VISIBILIDAD
+        # 🎯 HEADER DE TRADING SIGNALS
         tokens_header = tk.Frame(tokens_frame, bg=DARK_BG, height=30)
         tokens_header.pack(fill=tk.X)
-        tokens_header.pack_propagate(False)  # ✅ IMPORTANTE: Mantener tamaño
+        tokens_header.pack_propagate(False)
         
         tk.Label(tokens_header, text="🎯 TRADING SIGNALS", bg=DARK_BG, fg=TEXT_COLOR,
                 font=("Arial", 12, "bold")).pack(side=tk.LEFT, pady=5)
         
-        # ✅ INDICADOR - ASEGURAR VISIBILIDAD
+        # ✅ INDICADOR
         self.tokens_indicator = tk.Label(tokens_header, text="●", fg=TEXT_SECONDARY, 
-                                    font=("Arial", 16), bg=DARK_BG, cursor="hand2")  # ✅ Tamaño aumentado
+                                    font=("Arial", 16), bg=DARK_BG, cursor="hand2")
         self.tokens_indicator.pack(side=tk.LEFT, padx=5, pady=5)
         self.section_indicators['tokens'] = self.tokens_indicator
-
 
         # Contenedor para tokens en grid (3 columnas)
         self.tokens_container = tk.Frame(tokens_frame, bg=DARK_BG)
@@ -966,57 +1007,20 @@ class ModernTradingGUI:
         self.token_frames = {}
         self.create_token_cards_grid()
 
-        # Panel de cartera
-        portfolio_frame = tk.Frame(bottom_row, bg=DARK_BG, width=400)
-        portfolio_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(20, 0))
-        portfolio_frame.pack_propagate(False)
+        # Panel derecho: Logs (45% del ancho total)
+        log_frame = tk.Frame(bottom_row, bg=DARK_BG)
+        log_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-        # 🎯 HEADER DE CARTERA - ASEGURAR VISIBILIDAD
-        portfolio_header = tk.Frame(portfolio_frame, bg=DARK_BG, height=30)
-        portfolio_header.pack(fill=tk.X)
-        portfolio_header.pack_propagate(False)  # ✅ IMPORTANTE: Mantener tamaño
+        # Header de Logs
+        log_header = tk.Frame(log_frame, bg=DARK_BG, height=30)
+        log_header.pack(fill=tk.X)
+        log_header.pack_propagate(False)
         
-        tk.Label(portfolio_header, text="💼 BINANCE WALLET", bg=DARK_BG, fg=TEXT_COLOR,
+        tk.Label(log_header, text="📋 TRADING LOGS", bg=DARK_BG, fg=TEXT_COLOR,
                 font=("Arial", 12, "bold")).pack(side=tk.LEFT, pady=5)
-        
-        # ✅ INDICADOR - ASEGURAR VISIBILIDAD
-        self.portfolio_indicator = tk.Label(portfolio_header, text="●", fg=TEXT_SECONDARY,
-                                        font=("Arial", 16), bg=DARK_BG, cursor="hand2")  # ✅ Tamaño aumentado
-        self.portfolio_indicator.pack(side=tk.LEFT, padx=5, pady=5)
-        self.section_indicators['portfolio'] = self.portfolio_indicator
 
-
-        # Gráfico de cartera
-        self.portfolio_fig = Figure(figsize=(4, 2.8), facecolor=DARK_BG)
-        self.portfolio_ax = self.portfolio_fig.add_subplot(111)
-        self.portfolio_ax.set_facecolor(CARD_BG)
-        self.portfolio_canvas = FigureCanvasTkAgg(self.portfolio_fig, portfolio_frame)
-        self.portfolio_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, pady=(5, 10))
-
-        # Lista de activos
-        self.portfolio_tree = ttk.Treeview(portfolio_frame, columns=('Asset', 'Balance', 'USD', '%'), 
-                                        show='headings', height=8)
-        self.portfolio_tree.heading('Asset', text='SYMBOL')
-        self.portfolio_tree.heading('Balance', text='AMMOUNT')
-        self.portfolio_tree.heading('USD', text='USD')
-        self.portfolio_tree.heading('%', text='%')
-        
-        self.portfolio_tree.column('Asset', width=80)
-        self.portfolio_tree.column('Balance', width=100)
-        self.portfolio_tree.column('USD', width=100)
-        self.portfolio_tree.column('%', width=60)
-
-        self.portfolio_tree.pack(fill=tk.BOTH, expand=True)
-
-        # Logs de trading
-        log_frame = tk.Frame(bottom_row, bg=DARK_BG, width=400)
-        log_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(20, 0))
-        log_frame.pack_propagate(False)
-
-        tk.Label(log_frame, text="📋 LOGS", bg=DARK_BG, fg=TEXT_COLOR,
-                font=("Arial", 12, "bold")).pack(anchor="w")
-
-        self.log_text = tk.Text(log_frame, height=15, bg=CARD_BG, fg=TEXT_COLOR, 
+        # Área de logs más grande (45% del ancho total)
+        self.log_text = tk.Text(log_frame, height=20, bg=CARD_BG, fg=TEXT_COLOR, 
                             font=("Consolas", 9), wrap=tk.WORD)
         self.setup_log_tags()
         scrollbar_log = tk.Scrollbar(log_frame, command=self.log_text.yview)
@@ -1027,6 +1031,9 @@ class ModernTradingGUI:
 
         # ✅ CONFIGURAR TOOLTIPS DESPUÉS DE CREAR TODOS LOS INDICADORES
         self.setup_tooltips()
+
+        # Actualizar referencias de indicadores para incluir wallet
+        self.section_indicators['portfolio'] = self.wallet_indicator
 
     def start_all_continuous_pulses(self):
         """✅ INICIAR TODOS LOS PULSOS AL ARRANCAR - VERSIÓN MEJORADA"""
