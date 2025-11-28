@@ -141,13 +141,3 @@ class CapitalManager:
                 self.gui.log_trade(completion_msg, 'GREEN')
         
         return actions if actions else "No ajustes necesarios"
-
-        """Convierte peso numérico a texto de señal"""
-        if weight >= 0.8:
-            return "STRONG_BUY"
-        elif weight >= 0.5:
-            return "BUY"
-        elif weight >= 0.3:
-            return "SELL"
-        else:
-            return "STRONG_SELL"
