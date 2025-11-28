@@ -1,6 +1,7 @@
-# Archivo: capital_manager.py - VERSIÓN CON DETECCIÓN DE CAMBIOS DE DIRECCIÓN
+# Archivo: capital_manager.py - VERSIÓN CON SISTEMA DE COOLDOWN
 from config import TIMEFRAMES, SYMBOLS, TIMEFRAME_WEIGHTS, MIN_TRADE_DIFF
 from datetime import datetime
+import time
 
 class CapitalManager:
     def __init__(self, account, indicators, gui=None):
@@ -10,7 +11,8 @@ class CapitalManager:
         self.base_allocation = 1.0 / len(SYMBOLS)
         self.last_weights = {s: 0.0 for s in SYMBOLS}
         self.last_signals = {s: {tf: None for tf in TIMEFRAMES} for s in SYMBOLS}
-        self.last_changes = {s: {tf: None for tf in TIMEFRAMES} for s in SYMBOLS}  # ✅ NUEVO: Almacenar dirección del último cambio
+        self.last_changes = {s: {tf: None for tf in TIMEFRAMES} for s in SYMBOLS}
+        self.cooldowns = {s: {tf: 0 for tf in TIMEFRAMES} for s in SYMBOLS}  # ✅ NUEVO: Sistema de cooldown
         self.SYMBOLS = SYMBOLS
         self.first_rebalance_done = False
     
@@ -57,6 +59,61 @@ class CapitalManager:
         else:
             return "NEUTRAL"   # Sin cambio
     
+    def timeframe_to_minutes(self, tf):
+        """✅ CONVERTIR TIMEFRAME A MINUTOS PARA CALCULAR COOLDOWN"""
+        if tf == "30m":
+            return 30
+        elif tf == "1h":
+            return 60
+        elif tf == "2h":
+            return 120
+        return 30  # Por defecto
+    
+    def update_cooldowns(self):
+        """✅ ACTUALIZAR Y VERIFICAR COOLDOWNS ACTIVOS"""
+        current_time = time.time()
+        
+        for symbol in self.SYMBOLS:
+            for tf in TIMEFRAMES:
+                cooldown_end = self.cooldowns[symbol][tf]
+                if cooldown_end > 0:
+                    if current_time >= cooldown_end:
+                        # ✅ COOLDOWN TERMINADO
+                        self.cooldowns[symbol][tf] = 0
+                        end_msg = f"⏰ COOLDOWN ENDED {symbol} {tf}"
+                        if self.gui:
+                            self.gui.log_trade(end_msg, 'BLUE')
+                        else:
+                            print(end_msg)
+    
+    def start_cooldown(self, symbol, tf):
+        """✅ INICIAR COOLDOWN PARA UN TIMEFRAME ESPECÍFICO"""
+        cooldown_minutes = self.timeframe_to_minutes(tf) // 2
+        cooldown_seconds = cooldown_minutes * 60
+        self.cooldowns[symbol][tf] = time.time() + cooldown_seconds
+        
+        start_msg = f"⏰ COOLDOWN STARTED {symbol} {tf} - {cooldown_minutes} minutes"
+        if self.gui:
+            self.gui.log_trade(start_msg, 'BLUE')
+        else:
+            print(start_msg)
+    
+    def reset_cooldown(self, symbol, tf):
+        """✅ RESETEAR COOLDOWN EXISTENTE"""
+        cooldown_minutes = self.timeframe_to_minutes(tf) // 2
+        cooldown_seconds = cooldown_minutes * 60
+        self.cooldowns[symbol][tf] = time.time() + cooldown_seconds
+        
+        reset_msg = f"🔄 COOLDOWN RESET {symbol} {tf} - Direction change during active cooldown"
+        if self.gui:
+            self.gui.log_trade(reset_msg, 'YELLOW')
+        else:
+            print(reset_msg)
+    
+    def is_cooldown_active(self, symbol, tf):
+        """✅ VERIFICAR SI HAY COOLDOWN ACTIVO"""
+        return self.cooldowns[symbol][tf] > 0
+    
     def log_signal_changes(self, symbol, new_signals):
         """✅ REGISTRA CAMBIOS DE SEÑAL Y DETECTA CAMBIOS DE DIRECCIÓN"""
         if not self.first_rebalance_done:
@@ -90,6 +147,14 @@ class CapitalManager:
                         self.gui.log_trade(direction_msg, 'YELLOW')
                     else:
                         print(direction_msg)
+                    
+                    # ✅ 3. MANEJO DE COOLDOWN
+                    if self.is_cooldown_active(symbol, tf):
+                        # ✅ COOLDOWN ACTIVO - RESETEAR
+                        self.reset_cooldown(symbol, tf)
+                    else:
+                        # ✅ NO HAY COOLDOWN - INICIAR UNO NUEVO
+                        self.start_cooldown(symbol, tf)
                 
                 # ✅ ACTUALIZAR ÚLTIMA DIRECCIÓN REGISTRADA
                 self.last_changes[symbol][tf] = current_direction
@@ -114,6 +179,9 @@ class CapitalManager:
         return changed
 
     def rebalance(self, manual=False):
+        # ✅ ACTUALIZAR COOLDOWNS AL INICIO DE CADA REBALANCE
+        self.update_cooldowns()
+        
         total_usd = self.account.get_balance_usdc()
         if total_usd <= 0:
             return "No capital"
