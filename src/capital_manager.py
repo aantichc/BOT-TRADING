@@ -1,4 +1,4 @@
-# Archivo: capital_manager.py - VERSIÓN CON LOGS OPTIMIZADOS
+# Archivo: capital_manager.py - VERSIÓN CON LÓGICA CORREGIDA
 from config import TIMEFRAMES, SYMBOLS, TIMEFRAME_WEIGHTS, MIN_TRADE_DIFF
 from datetime import datetime
 import time
@@ -16,7 +16,7 @@ class CapitalManager:
         self.frozen_weights = {s: {tf: None for tf in TIMEFRAMES} for s in SYMBOLS}
         self.cooldown_directions = {s: {tf: None for tf in TIMEFRAMES} for s in SYMBOLS}
         self.cooldown_initial_signals = {s: {tf: None for tf in TIMEFRAMES} for s in SYMBOLS}
-        self.last_frozen_log = {s: {tf: None for tf in TIMEFRAMES} for s in SYMBOLS}  # ✅ NUEVO: Control de logs
+        self.last_frozen_log = {s: {tf: None for tf in TIMEFRAMES} for s in SYMBOLS}
         self.SYMBOLS = SYMBOLS
         self.first_rebalance_done = False
     
@@ -84,7 +84,7 @@ class CapitalManager:
                         self.frozen_weights[symbol][tf] = None
                         self.cooldown_directions[symbol][tf] = None
                         self.cooldown_initial_signals[symbol][tf] = None
-                        self.last_frozen_log[symbol][tf] = None  # ✅ RESET LOG CONTROL
+                        self.last_frozen_log[symbol][tf] = None
                         end_msg = f"⏰ COOLDOWN ENDED {symbol} {tf} - Weights unfrozen"
                         if self.gui:
                             self.gui.log_trade(end_msg, 'BLUE')
@@ -95,6 +95,7 @@ class CapitalManager:
         """✅ INICIAR COOLDOWN PARA UN TIMEFRAME ESPECÍFICO"""
         cooldown_minutes = self.timeframe_to_minutes(tf) // 2
         cooldown_seconds = cooldown_minutes * 60
+        
         self.cooldowns[symbol][tf] = time.time() + cooldown_seconds
         self.cooldown_directions[symbol][tf] = direction
         self.cooldown_initial_signals[symbol][tf] = initial_signal
@@ -109,21 +110,21 @@ class CapitalManager:
         else:
             frozen_weight = 0.0
         self.frozen_weights[symbol][tf] = frozen_weight
-        self.last_frozen_log[symbol][tf] = frozen_weight  # ✅ REGISTRAR LOG INICIAL
+        self.last_frozen_log[symbol][tf] = frozen_weight
         
-        start_msg = f"⏰ COOLDOWN STARTED {symbol} {tf} - {cooldown_minutes} minutes (Direction: {direction}, Initial Signal: {initial_signal})"
+        start_msg = f"⏰ COOLDOWN STARTED {symbol} {tf} - {cooldown_minutes} minutes (Direction: {direction})"
         if self.gui:
             self.gui.log_trade(start_msg, 'BLUE')
         else:
             print(start_msg)
     
     def reset_cooldown(self, symbol, tf):
-        """✅ RESETEA EL COOLDOWN CUANDO LA SEÑAL VUELVE AL ESTADO INICIAL"""
+        """✅ RESETEA EL COOLDOWN INMEDIATAMENTE AL VOLVER A LA SEÑAL INICIAL"""
         self.cooldowns[symbol][tf] = 0
         self.frozen_weights[symbol][tf] = None
         self.cooldown_directions[symbol][tf] = None
         self.cooldown_initial_signals[symbol][tf] = None
-        self.last_frozen_log[symbol][tf] = None  # ✅ RESET LOG CONTROL
+        self.last_frozen_log[symbol][tf] = None
         
         reset_msg = f"🔄 COOLDOWN RESET {symbol} {tf} - Signal returned to initial state"
         if self.gui:
@@ -136,7 +137,7 @@ class CapitalManager:
         return self.cooldowns[symbol][tf] > 0
     
     def should_block_signal_change(self, symbol, tf, new_signal):
-        """✅ VERIFICAR SI SE DEBE BLOQUEAR UN CAMBIO DE SEÑAL DURANTE COOLDOWN"""
+        """✅ BLOQUEAR SIEMPRE CAMBIOS EN DIRECCIÓN OPUESTA DURANTE COOLDOWN"""
         if not self.is_cooldown_active(symbol, tf):
             return False
         
@@ -151,8 +152,8 @@ class CapitalManager:
         
         change_direction = self.get_change_direction(old_signal, new_signal)
         
-        # ✅ SOLO BLOQUEAR SI ES DIRECCIÓN OPUESTA AL COOLDOWN
-        return change_direction != current_direction
+        # ✅ BLOQUEAR SIEMPRE SI ES DIRECCIÓN OPUESTA AL COOLDOWN
+        return change_direction != current_direction and change_direction != "NEUTRAL"
     
     def check_cooldown_reset(self, symbol, tf, new_signal):
         """✅ VERIFICAR SI SE DEBE RESETEAR EL COOLDOWN POR VOLVER A LA SEÑAL INICIAL"""
@@ -163,7 +164,7 @@ class CapitalManager:
         if initial_signal is None:
             return False
         
-        # ✅ RESETEAR SI LA NUEVA SEÑAL COINCIDE CON LA SEÑAL QUE INICIÓ EL COOLDOWN
+        # ✅ RESETEAR INMEDIATAMENTE SI LA NUEVA SEÑAL COINCIDE CON LA INICIAL
         if new_signal == initial_signal:
             self.reset_cooldown(symbol, tf)
             return True
@@ -171,7 +172,7 @@ class CapitalManager:
         return False
     
     def calculate_weight_with_cooldown(self, symbol, signals):
-        """✅ CALCULAR PESO TENIENDO EN CUENTA COOLDOWNS - LOGS OPTIMIZADOS"""
+        """✅ CALCULAR PESO USANDO WEIGHTS CONGELADOS DURANTE COOLDOWN"""
         weight = 0.0
         
         for tf, color in signals.items():
@@ -179,14 +180,14 @@ class CapitalManager:
             
             # ✅ VERIFICAR SI ESTE TIMEFRAME ESTÁ EN COOLDOWN
             if self.is_cooldown_active(symbol, tf):
-                # ✅ VERIFICAR SI SE DEBE USAR PESO CONGELADO
+                # ✅ VERIFICAR SI SE DEBE BLOQUEAR CAMBIO (DIRECCIÓN OPUESTA)
                 if self.should_block_signal_change(symbol, tf, color):
                     # ✅ USAR PESO CONGELADO (dirección opuesta bloqueada)
                     frozen_weight = self.frozen_weights[symbol][tf]
                     if frozen_weight is not None:
                         weight += frozen_weight
                         
-                        # ✅ SOLO LOG SI ES UN NUEVO BLOQUEO
+                        # ✅ SOLO LOG PRIMERA VEZ
                         if self.last_frozen_log[symbol][tf] != "BLOCKED":
                             block_msg = f"⏸️ SIGNAL BLOCKED {symbol} {tf}: {color} (Opposite direction)"
                             if self.gui:
@@ -197,7 +198,7 @@ class CapitalManager:
                     else:
                         weight += 0.0
                 else:
-                    # ✅ MISMA DIRECCIÓN - ACTUALIZAR PESO CONGELADO Y USARLO
+                    # ✅ MISMA DIRECCIÓN - ACTUALIZAR PESO CONGELADO
                     if color == "GREEN":
                         new_frozen_weight = w
                     elif color == "YELLOW":
@@ -207,10 +208,9 @@ class CapitalManager:
                     
                     # ✅ SOLO LOG SI EL PESO CONGELADO CAMBIA
                     current_logged = self.last_frozen_log[symbol][tf]
-                    if current_logged != new_frozen_weight:
+                    if current_logged != new_frozen_weight and current_logged != "BLOCKED":
                         self.frozen_weights[symbol][tf] = new_frozen_weight
                         
-                        # ✅ DETERMINAR TIPO DE ACTUALIZACIÓN PARA EL LOG
                         if current_logged is None:
                             update_msg = f"🔄 FROZEN WEIGHT SET {symbol} {tf}: {new_frozen_weight:.3f}"
                         else:
@@ -252,11 +252,16 @@ class CapitalManager:
                 if self.check_cooldown_reset(symbol, tf, new_color):
                     # ✅ COOLDOWN RESETEADO - CONTINUAR CON EL CAMBIO NORMALMENTE
                     pass
-                
-                # ✅ 2. VERIFICAR SI ESTE CAMBIO DEBE SER BLOQUEADO
-                if self.should_block_signal_change(symbol, tf, new_color):
-                    # ❌ CAMBIO BLOQUEADO - NO SE REGISTRA NI ACTUALIZA
-                    continue
+                else:
+                    # ✅ 2. VERIFICAR SI ESTE CAMBIO DEBE SER BLOQUEADO
+                    if self.should_block_signal_change(symbol, tf, new_color):
+                        # ❌ CAMBIO BLOQUEADO - NO SE REGISTRA NI ACTUALIZA
+                        block_msg = f"⏸️ CHANGE BLOCKED {symbol} {tf}: {old_color} → {new_color}"
+                        if self.gui:
+                            self.gui.log_trade(block_msg, 'YELLOW')
+                        else:
+                            print(block_msg)
+                        continue
                 
                 # ✅ 3. LOG NORMAL DEL CAMBIO (AZUL)
                 change_msg = f"🔄 {symbol} {tf}: {old_color} → {new_color}"
@@ -279,16 +284,16 @@ class CapitalManager:
                     else:
                         print(direction_msg)
                     
-                    # ✅ 5. MANEJO DE COOLDOWN - SIN BLOQUEAR EL CAMBIO ACTUAL
+                    # ✅ 5. MANEJO DE COOLDOWN
                     if self.is_cooldown_active(symbol, tf):
                         # ✅ COOLDOWN ACTIVO - NO SE PERMITE NUEVO COOLDOWN
-                        cooldown_msg = f"⚠️ COOLDOWN ACTIVE {symbol} {tf} - New direction change executed but no new cooldown"
+                        cooldown_msg = f"⚠️ COOLDOWN ACTIVE {symbol} {tf} - Direction change executed but no new cooldown"
                         if self.gui:
                             self.gui.log_trade(cooldown_msg, 'YELLOW')
                         else:
                             print(cooldown_msg)
                     else:
-                        # ✅ NO HAY COOLDOWN - INICIAR UNO NUEVO (DESPUÉS del cambio actual)
+                        # ✅ NO HAY COOLDOWN - INICIAR UNO NUEVO
                         self.start_cooldown(symbol, tf, current_direction, new_color)
                 
                 # ✅ ACTUALIZAR ÚLTIMA DIRECCIÓN REGISTRADA
@@ -328,7 +333,7 @@ class CapitalManager:
         for symbol in SYMBOLS:
             signals = self.get_signals(symbol)
             
-            # ✅ CALCULAR PESO PRIMERO (para determinar cambios)
+            # ✅ CALCULAR PESO (SIEMPRE SE EJECUTA, USA WEIGHTS CONGELADOS SI HAY COOLDOWN)
             weight = self.calculate_weight_with_cooldown(symbol, signals)
             
             # ✅ REGISTRAR CAMBIOS DE SEÑAL (después de calcular peso)
@@ -337,6 +342,7 @@ class CapitalManager:
             old_weight = self.last_weights.get(symbol, 0.0)
             signal_changed = self.has_changed(symbol, weight)
             
+            # ✅ EJECUTAR REBALANCE SIEMPRE QUE HAY CAMBIO O ES MANUAL
             if force_initial_rebalance or signal_changed or manual:
                 if (signal_changed and not manual) or force_initial_rebalance:
                     if force_initial_rebalance:
