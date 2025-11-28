@@ -1,4 +1,4 @@
-# Archivo: capital_manager.py - VERSIÓN CON REBALANCE AUTOMÁTICO INICIAL Y LOG DE CAMBIOS DE SEÑAL
+# Archivo: capital_manager.py - VERSIÓN CON DETECCIÓN DE CAMBIOS DE DIRECCIÓN
 from config import TIMEFRAMES, SYMBOLS, TIMEFRAME_WEIGHTS, MIN_TRADE_DIFF
 from datetime import datetime
 
@@ -9,9 +9,10 @@ class CapitalManager:
         self.gui = gui
         self.base_allocation = 1.0 / len(SYMBOLS)
         self.last_weights = {s: 0.0 for s in SYMBOLS}
-        self.last_signals = {s: {tf: None for tf in TIMEFRAMES} for s in SYMBOLS}  # ✅ NUEVO: Almacenar señales anteriores
+        self.last_signals = {s: {tf: None for tf in TIMEFRAMES} for s in SYMBOLS}
+        self.last_changes = {s: {tf: None for tf in TIMEFRAMES} for s in SYMBOLS}  # ✅ NUEVO: Almacenar dirección del último cambio
         self.SYMBOLS = SYMBOLS
-        self.first_rebalance_done = False  # ✅ FLAG PARA PRIMER REBALANCE
+        self.first_rebalance_done = False
     
     def get_signals(self, symbol):
         """✅ OBTENER SEÑALES OO - CORAZÓN DEL SISTEMA DE TRADING"""
@@ -25,32 +26,73 @@ class CapitalManager:
                 if not df.empty:
                     # 2. CALCULAR SEÑAL OO (Ordenamiento Ondeulante)
                     color, _ = self.indicators.calculate_oo(df)
-                    signals[tf_name] = color  # ← ESTO DECIDE COMPRAR/VENDER
+                    signals[tf_name] = color
                 else:
-                    signals[tf_name] = "RED"  # Sin datos = NO operar
+                    signals[tf_name] = "RED"
                     
             except Exception as e:
-                signals[tf_name] = "RED"  # Error = NO operar
+                signals[tf_name] = "RED"
         
-        return signals  # ← SEÑALES QUE DECIDEN TRADING
+        return signals
+    
+    def get_signal_value(self, color):
+        """✅ ASIGNAR VALOR NUMÉRICO A LAS SEÑALES PARA COMPARAR DIRECCIÓN"""
+        if color == "RED":
+            return 0
+        elif color == "YELLOW":
+            return 1
+        elif color == "GREEN":
+            return 2
+        return 0
+    
+    def get_change_direction(self, old_color, new_color):
+        """✅ DETERMINAR DIRECCIÓN DEL CAMBIO (POSITIVA O NEGATIVA)"""
+        old_val = self.get_signal_value(old_color)
+        new_val = self.get_signal_value(new_color)
+        
+        if new_val > old_val:
+            return "POSITIVE"  # Mejora: RED→YELLOW, RED→GREEN, YELLOW→GREEN
+        elif new_val < old_val:
+            return "NEGATIVE"  # Empeora: GREEN→YELLOW, GREEN→RED, YELLOW→RED
+        else:
+            return "NEUTRAL"   # Sin cambio
     
     def log_signal_changes(self, symbol, new_signals):
-        """✅ REGISTRA CAMBIOS DE SEÑAL EN TIMEFRAMES"""
+        """✅ REGISTRA CAMBIOS DE SEÑAL Y DETECTA CAMBIOS DE DIRECCIÓN"""
         if not self.first_rebalance_done:
-            return  # ❌ No registrar durante inicialización
+            return
             
         old_signals = self.last_signals.get(symbol, {})
         
         for tf, new_color in new_signals.items():
             old_color = old_signals.get(tf)
             
-            # ✅ SOLO REGISTRAR SI EL COLOR CAMBIA (no None, no mismo color)
+            # ✅ SOLO REGISTRAR SI EL COLOR CAMBIA
             if old_color is not None and new_color != old_color:
+                # ✅ 1. LOG NORMAL DEL CAMBIO (AZUL)
                 change_msg = f"🔄 {symbol} {tf}: {old_color} → {new_color}"
                 if self.gui:
                     self.gui.log_trade(change_msg, 'BLUE')
                 else:
                     print(change_msg)
+                
+                # ✅ 2. DETECTAR CAMBIO DE DIRECCIÓN (AMARILLO)
+                current_direction = self.get_change_direction(old_color, new_color)
+                last_direction = self.last_changes[symbol].get(tf)
+                
+                # ✅ VERIFICAR SI HAY CAMBIO DE DIRECCIÓN
+                if (last_direction is not None and 
+                    current_direction != "NEUTRAL" and 
+                    current_direction != last_direction):
+                    
+                    direction_msg = f"🔄 DIRECTION CHANGE {symbol} {tf}: {last_direction} → {current_direction}"
+                    if self.gui:
+                        self.gui.log_trade(direction_msg, 'YELLOW')
+                    else:
+                        print(direction_msg)
+                
+                # ✅ ACTUALIZAR ÚLTIMA DIRECCIÓN REGISTRADA
+                self.last_changes[symbol][tf] = current_direction
         
         # ✅ ACTUALIZAR SEÑALES ANTERIORES
         self.last_signals[symbol] = new_signals
@@ -77,23 +119,19 @@ class CapitalManager:
             return "No capital"
         
         actions = []
-        
-        # ✅ FORZAR REBALANCE EN PRIMERA EJECUCIÓN AUNQUE NO HAYA CAMBIO DE SEÑAL
         force_initial_rebalance = not self.first_rebalance_done
         
         for symbol in SYMBOLS:
             signals = self.get_signals(symbol)
             
-            # ✅ REGISTRAR CAMBIOS DE SEÑAL ANTES DE CALCULAR PESOS
+            # ✅ REGISTRAR CAMBIOS DE SEÑAL Y DETECTAR CAMBIOS DE DIRECCIÓN
             self.log_signal_changes(symbol, signals)
             
             weight = self.calculate_weight(signals)
             
-            # ✅ EVITAR LOGS DE INICIALIZACIÓN
             old_weight = self.last_weights.get(symbol, 0.0)
             signal_changed = self.has_changed(symbol, weight)
             
-            # ✅ EN PRIMERA EJECUCIÓN, EJECUTAR REBALANCE COMPLETO
             if force_initial_rebalance or signal_changed or manual:
                 if (signal_changed and not manual) or force_initial_rebalance:
                     if force_initial_rebalance:
@@ -114,15 +152,12 @@ class CapitalManager:
                 
                 if abs(diff_usd) > MIN_TRADE_DIFF:
                     if diff_usd > 0:
-                        # ✅ COMPRA - VERIFICAR CAPITAL DISPONIBLE ANTES
                         available_usdc = self.account.get_available_usdc()
                         
-                        # ✅ SI NO HAY SUFICIENTE CAPITAL, AJUSTAR AL DISPONIBLE
                         if available_usdc < diff_usd:
                             original_diff = diff_usd
                             diff_usd = available_usdc
                             
-                            # ✅ SOLO COMPRAR SI EL MONTO AJUSTADO ES SUFICIENTE
                             if diff_usd > MIN_TRADE_DIFF:
                                 msg = f"💰 CAPITAL LIMITADO: Comprando {symbol} con ${diff_usd:.2f} (de ${original_diff:.2f} objetivo)"
                                 actions.append(msg)
@@ -133,9 +168,8 @@ class CapitalManager:
                                 actions.append(msg)
                                 if self.gui:
                                     self.gui.log_trade(msg, 'RED')
-                                continue  # Saltar esta compra
+                                continue
                         
-                        # ✅ EJECUTAR COMPRA CON MONTO AJUSTADO
                         success, msg = self.account.buy_market(symbol, diff_usd)
                         if success:
                             if self.gui:
@@ -146,7 +180,6 @@ class CapitalManager:
                             if self.gui:
                                 self.gui.log_trade(error_msg, 'RED')
                     else:
-                        # VENTA
                         quantity = abs(diff_usd) / price
                         success, msg = self.account.sell_market(symbol, quantity)
                         if success:
@@ -158,7 +191,6 @@ class CapitalManager:
                             if self.gui:
                                 self.gui.log_trade(error_msg, 'RED')
         
-        # ✅ MARCAR QUE EL PRIMER REBALANCE SE HA COMPLETADO
         if not self.first_rebalance_done:
             self.first_rebalance_done = True
             completion_msg = "✅ Initial Rebalance Completed"
