@@ -370,7 +370,7 @@ class ModernTradingGUI:
                 try:
                     # ✅ SOLO LOG ESENCIAL - SEÑALES OO
                     signals = data.get('signals', {})
-                    print(f"   📊 {symbol}: {signals}")
+                    # print(f"   📊 {symbol}: {signals}")
                     
                     # Actualizar precio (sin log)
                     frame_data["price_label"].config(text=f"${data['price']:,.4f}")
@@ -1723,7 +1723,7 @@ class ModernTradingGUI:
             # ✅ ENVIAR DATOS (LOG REDUCIDO)
             if symbol_data:
                 self.data_queue.put(("token_data", symbol_data))
-                # print(f"✅ {len(symbol_data)} tokens procesados")
+                print(f"✅ {len(symbol_data)} tokens procesados")
             else:
                 print("⚠️ No se obtuvieron datos")
                 
