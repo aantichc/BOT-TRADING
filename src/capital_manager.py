@@ -1,4 +1,4 @@
-# Archivo: capital_manager.py - VERSIÓN CON REBALANCE AUTOMÁTICO INICIAL
+# Archivo: capital_manager.py - VERSIÓN CON REBALANCE AUTOMÁTICO INICIAL Y LOG DE CAMBIOS DE SEÑAL
 from config import TIMEFRAMES, SYMBOLS, TIMEFRAME_WEIGHTS, MIN_TRADE_DIFF
 from datetime import datetime
 
@@ -9,8 +9,9 @@ class CapitalManager:
         self.gui = gui
         self.base_allocation = 1.0 / len(SYMBOLS)
         self.last_weights = {s: 0.0 for s in SYMBOLS}
+        self.last_signals = {s: {tf: None for tf in TIMEFRAMES} for s in SYMBOLS}  # ✅ NUEVO: Almacenar señales anteriores
         self.SYMBOLS = SYMBOLS
-        self.first_rebalance_done = False  # ✅ NUEVO FLAG PARA PRIMER REBALANCE
+        self.first_rebalance_done = False  # ✅ FLAG PARA PRIMER REBALANCE
     
     def get_signals(self, symbol):
         """✅ OBTENER SEÑALES OO - CORAZÓN DEL SISTEMA DE TRADING"""
@@ -33,6 +34,27 @@ class CapitalManager:
         
         return signals  # ← SEÑALES QUE DECIDEN TRADING
     
+    def log_signal_changes(self, symbol, new_signals):
+        """✅ REGISTRA CAMBIOS DE SEÑAL EN TIMEFRAMES"""
+        if not self.first_rebalance_done:
+            return  # ❌ No registrar durante inicialización
+            
+        old_signals = self.last_signals.get(symbol, {})
+        
+        for tf, new_color in new_signals.items():
+            old_color = old_signals.get(tf)
+            
+            # ✅ SOLO REGISTRAR SI EL COLOR CAMBIA (no None, no mismo color)
+            if old_color is not None and new_color != old_color:
+                change_msg = f"🔄 {symbol} {tf}: {old_color} → {new_color}"
+                if self.gui:
+                    self.gui.log_trade(change_msg, 'BLUE')
+                else:
+                    print(change_msg)
+        
+        # ✅ ACTUALIZAR SEÑALES ANTERIORES
+        self.last_signals[symbol] = new_signals
+
     def calculate_weight(self, signals):
         weight = 0.0
         for tf, color in signals.items():
@@ -61,6 +83,10 @@ class CapitalManager:
         
         for symbol in SYMBOLS:
             signals = self.get_signals(symbol)
+            
+            # ✅ REGISTRAR CAMBIOS DE SEÑAL ANTES DE CALCULAR PESOS
+            self.log_signal_changes(symbol, signals)
+            
             weight = self.calculate_weight(signals)
             
             # ✅ EVITAR LOGS DE INICIALIZACIÓN
