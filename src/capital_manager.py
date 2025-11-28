@@ -1,7 +1,6 @@
-# Archivo: capital_manager.py - VERSIÓN SIN LOGS DE COOLDOWN EN REBALANCE INICIAL
+# Archivo: capital_manager.py - VERSIÓN CON REBALANCE AUTOMÁTICO INICIAL
 from config import TIMEFRAMES, SYMBOLS, TIMEFRAME_WEIGHTS, MIN_TRADE_DIFF
 from datetime import datetime
-import time
 
 class CapitalManager:
     def __init__(self, account, indicators, gui=None):
@@ -11,129 +10,10 @@ class CapitalManager:
         self.base_allocation = 1.0 / len(SYMBOLS)
         self.last_weights = {s: 0.0 for s in SYMBOLS}
         self.SYMBOLS = SYMBOLS
-        self.first_rebalance_done = False
-        self.signal_cooldowns = {}
-        self.COOLDOWN_MINUTES = 5
-        
-    def should_allow_signal_change(self, symbol, timeframe, new_signal, silent=False):
-        """✅ OPCION SILENCIOSA PARA REBALANCE INICIAL"""
-        key = (symbol, timeframe)
-        current_time = time.time()
-        
-        if key not in self.signal_cooldowns:
-            self.signal_cooldowns[key] = {
-                'last_signal': new_signal,
-                'last_change': current_time,
-                'current_cycle_signal': new_signal,
-                'change_count': 1,
-                'evolution_path': [new_signal]
-            }
-            if not silent:
-                print(f"✅ Primer registro: {symbol} {timeframe} → {new_signal}")
-            return True
-        
-        cooldown_data = self.signal_cooldowns[key]
-        last_signal = cooldown_data['last_signal']
-        current_cycle_signal = cooldown_data['current_cycle_signal']
-        last_change = cooldown_data['last_change']
-        change_count = cooldown_data['change_count']
-        evolution_path = cooldown_data.get('evolution_path', [last_signal])
-        
-        # Verificar si pasó cooldown
-        time_since_change = current_time - last_change
-        cooldown_remaining = (self.COOLDOWN_MINUTES * 60) - time_since_change
-        
-        if cooldown_remaining <= 0:
-            # Cooldown completado - reiniciar CICLO
-            cooldown_data['last_signal'] = new_signal
-            cooldown_data['last_change'] = current_time
-            cooldown_data['current_cycle_signal'] = new_signal
-            cooldown_data['change_count'] = 1
-            cooldown_data['evolution_path'] = [new_signal]
-            if not silent:  # ✅ SOLO MOSTRAR SI NO ES SILENCIOSO
-                print(f"✅ Cooldown completado: {symbol} {timeframe} → {new_signal} (nuevo ciclo)")
-            return True
-        
-        # 🔄 DURANTE COOLDOWN - Lógica inteligente basada en CICLO ACTUAL
-        is_same_signal = (new_signal == last_signal)
-        is_natural_progression = self.is_natural_progression(symbol, timeframe, last_signal, new_signal, cooldown_data)
-        
-        if is_same_signal:
-            cooldown_data['last_signal'] = new_signal
-            # Actualizar el camino de evolución
-            if evolution_path and evolution_path[-1] != new_signal:
-                evolution_path.append(new_signal)
-            return True
-        elif is_natural_progression:
-            cooldown_data['last_signal'] = new_signal
-            cooldown_data['change_count'] += 1
-            # Actualizar el camino de evolución
-            if evolution_path and evolution_path[-1] != new_signal:
-                evolution_path.append(new_signal)
-            cooldown_data['evolution_path'] = evolution_path
-            
-            if not silent:  # ✅ SOLO MOSTRAR SI NO ES SILENCIOSO
-                print(f"✅ Progresión natural: {symbol} {timeframe} {last_signal} → {new_signal} "
-                    f"(cambios: {cooldown_data['change_count']}, ciclo: {current_cycle_signal}, camino: {'→'.join(evolution_path)})")
-            return True
-        else:
-            # 🚫 BLOQUEADO - Cambio no permitido durante cooldown
-            if not silent:  # ✅ SOLO MOSTRAR SI NO ES SILENCIOSO
-                print(f"🚫 Cooldown bloqueado: {symbol} {timeframe} {last_signal} → {new_signal} "
-                    f"(cooldown restante: {cooldown_remaining:.0f}s, ciclo: {current_cycle_signal}, camino: {'→'.join(evolution_path)})")
-            return False
-            
-    def is_natural_progression(self, symbol, timeframe, current_signal, new_signal, cooldown_data):
-        """✅ PROGRESIÓN NATURAL INTELIGENTE - Basada en CICLO ACTUAL"""
-        
-        # ✅ SIEMPRE permitir cambios directos ROJO↔VERDE
-        if (current_signal == 'RED' and new_signal == 'GREEN') or \
-           (current_signal == 'GREEN' and new_signal == 'RED'):
-            return True
-        
-        current_cycle_signal = cooldown_data.get('current_cycle_signal', current_signal)
-        change_count = cooldown_data.get('change_count', 1)
-        evolution_path = cooldown_data.get('evolution_path', [])
-        
-        # ✅ EVOLUCIÓN ALCISTA NATURAL: RED → YELLOW → GREEN
-        if current_cycle_signal == 'RED' and change_count == 1 and current_signal == 'YELLOW' and new_signal == 'GREEN':
-            return True
-        
-        # ✅ EVOLUCIÓN BAJISTA NATURAL: GREEN → YELLOW → RED  
-        if current_cycle_signal == 'GREEN' and change_count == 1 and current_signal == 'YELLOW' and new_signal == 'RED':
-            return True
-        
-        # ✅ PRIMER PASO HACIA YELLOW: RED → YELLOW o GREEN → YELLOW
-        if change_count == 1 and new_signal == 'YELLOW':
-            return True
-        
-        # ✅ PERMITIR SALIR DE YELLOW SI ES PRIMER CAMBIO DESDE ROJO/VERDE
-        if current_signal == 'YELLOW' and change_count == 2:
-            # Solo permitir si estamos completando una evolución natural
-            if (current_cycle_signal == 'RED' and new_signal == 'GREEN') or \
-               (current_cycle_signal == 'GREEN' and new_signal == 'RED'):
-                return True
-        
-        # 🚫 BLOQUEAR OSCILACIONES YELLOW:
-        # - RED → YELLOW → RED (oscilación indecisa)
-        # - GREEN → YELLOW → GREEN (oscilación indecisa)
-        if current_signal == 'YELLOW' and change_count >= 2:
-            if (current_cycle_signal == 'RED' and new_signal == 'RED') or \
-               (current_cycle_signal == 'GREEN' and new_signal == 'GREEN'):
-                return False
-            
-            # 🚫 Bloquear si ya hemos pasado por YELLOW y volvemos al mismo estado del ciclo
-            if len(evolution_path) >= 3:
-                if evolution_path[0] == 'RED' and evolution_path[1] == 'YELLOW' and new_signal == 'RED':
-                    return False
-                if evolution_path[0] == 'GREEN' and evolution_path[1] == 'YELLOW' and new_signal == 'GREEN':
-                    return False
-        
-        # 🚫 Por defecto, bloquear cambios complejos durante cooldown
-        return False
-     
-    def get_signals(self, symbol, skip_cooldown=False):
-        """✅ OBTENER SEÑALES OO - OPCIÓN PARA OMITIR COOLDOWN Y LOGS"""
+        self.first_rebalance_done = False  # ✅ NUEVO FLAG PARA PRIMER REBALANCE
+    
+    def get_signals(self, symbol):
+        """✅ OBTENER SEÑALES OO - CORAZÓN DEL SISTEMA DE TRADING"""
         signals = {}
         
         for tf_name, tf in TIMEFRAMES.items():
@@ -142,29 +22,16 @@ class CapitalManager:
                 df = self.indicators.get_klines(symbol, tf)
                 
                 if not df.empty:
-                    # 2. CALCULAR SEÑAL OO
+                    # 2. CALCULAR SEÑAL OO (Ordenamiento Ondeulante)
                     color, _ = self.indicators.calculate_oo(df)
-                    
-                    # 3. ✅ APLICAR COOLDOWN INTELIGENTE (OMITIR DURANTE REBALANCE INICIAL)
-                    if skip_cooldown:
-                        # ✅ DURANTE REBALANCE INICIAL: USAR SEÑAL REAL SIN COOLDOWN Y SIN LOGS
-                        signals[tf_name] = color
-                        # Pero aún así registrar para futuros cooldowns (EN SILENCIO)
-                        self.should_allow_signal_change(symbol, tf_name, color, silent=True)
-                    else:
-                        # ✅ OPERACIÓN NORMAL: APLICAR COOLDOWN CON LOGS
-                        if not self.should_allow_signal_change(symbol, tf_name, color, silent=False):
-                            signals[tf_name] = "YELLOW"  # Señal neutral durante cooldown
-                            print(f"⏳ Cooldown {symbol} {tf_name}: bloqueado revertir a {color}")
-                        else:
-                            signals[tf_name] = color
+                    signals[tf_name] = color  # ← ESTO DECIDE COMPRAR/VENDER
                 else:
-                    signals[tf_name] = "RED"
+                    signals[tf_name] = "RED"  # Sin datos = NO operar
                     
             except Exception as e:
-                signals[tf_name] = "RED"
+                signals[tf_name] = "RED"  # Error = NO operar
         
-        return signals
+        return signals  # ← SEÑALES QUE DECIDEN TRADING
     
     def calculate_weight(self, signals):
         weight = 0.0
@@ -193,12 +60,7 @@ class CapitalManager:
         force_initial_rebalance = not self.first_rebalance_done
         
         for symbol in SYMBOLS:
-            # ✅ DURANTE REBALANCE INICIAL: OMITIR COOLDOWN PARA OBTENER SEÑALES REALES
-            if force_initial_rebalance:
-                signals = self.get_signals(symbol, skip_cooldown=True)  # ← SIN COOLDOWN Y SIN LOGS
-            else:
-                signals = self.get_signals(symbol)  # ← COOLDOWN NORMAL CON LOGS
-                
+            signals = self.get_signals(symbol)
             weight = self.calculate_weight(signals)
             
             # ✅ EVITAR LOGS DE INICIALIZACIÓN
@@ -245,7 +107,7 @@ class CapitalManager:
                                 actions.append(msg)
                                 if self.gui:
                                     self.gui.log_trade(msg, 'RED')
-                                continue
+                                continue  # Saltar esta compra
                         
                         # ✅ EJECUTAR COMPRA CON MONTO AJUSTADO
                         success, msg = self.account.buy_market(symbol, diff_usd)
@@ -280,7 +142,6 @@ class CapitalManager:
         
         return actions if actions else "No ajustes necesarios"
 
-    def weight_to_signal(self, weight):
         """Convierte peso numérico a texto de señal"""
         if weight >= 0.8:
             return "STRONG_BUY"
