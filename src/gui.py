@@ -1403,7 +1403,7 @@ class ModernTradingGUI:
                     daily_changes[symbol] = "+0.00%"
             
             # ✅ LOG FINAL RESUMIDO
-            print(f"   📈 Cambios diarios: {symbols_found}/{len(self.token_frames)} tokens")
+            # print(f"   📈 Cambios diarios: {symbols_found}/{len(self.token_frames)} tokens")
             return daily_changes
                 
         except Exception as e:
@@ -1723,7 +1723,7 @@ class ModernTradingGUI:
             # ✅ ENVIAR DATOS (LOG REDUCIDO)
             if symbol_data:
                 self.data_queue.put(("token_data", symbol_data))
-                print(f"✅ {len(symbol_data)} tokens procesados")
+                # print(f"✅ {len(symbol_data)} tokens procesados")
             else:
                 print("⚠️ No se obtuvieron datos")
                 
