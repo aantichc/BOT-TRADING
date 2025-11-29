@@ -1,4 +1,4 @@
-# Archivo: capital_manager.py - VERSIÓN CORREGIDA
+# Archivo: capital_manager.py - VERSIÓN COMPLETA CORREGIDA
 from config import TIMEFRAMES, SYMBOLS, TIMEFRAME_WEIGHTS, MIN_TRADE_DIFF
 from datetime import datetime
 import time
@@ -20,8 +20,8 @@ class CapitalManager:
         self.first_rebalance_done = False
         
         # ✅ Control de logs repetidos
-        self._last_block_times = {}
-        self._last_frozen_times = {}
+        self._last_block_logs = {}
+        self._last_frozen_logs = {}
     
     def get_signals(self, symbol):
         """✅ OBTENER SEÑALES OO - CORAZÓN DEL SISTEMA DE TRADING"""
@@ -102,12 +102,11 @@ class CapitalManager:
         self.cooldown_directions[symbol][tf] = direction
         self.cooldown_initial_signals[symbol][tf] = initial_signal
         
-        # ✅ CONGELAR PESO ACTUAL AL INICIAR COOLDOWN
+        # ✅ CONGELAR PESO BASADO EN LA SEÑAL INICIAL DEL COOLDOWN
         w = TIMEFRAME_WEIGHTS[tf]
-        current_signal = self.last_signals[symbol].get(tf, "RED")
-        if current_signal == "GREEN":
+        if initial_signal == "GREEN":
             frozen_weight = w
-        elif current_signal == "YELLOW":
+        elif initial_signal == "YELLOW":
             frozen_weight = w * 0.5
         else:
             frozen_weight = 0.0
@@ -187,16 +186,13 @@ class CapitalManager:
                     if frozen_weight is not None:
                         weight += frozen_weight
                         
-                        # ✅ EVITAR LOGS REPETIDOS - solo registrar una vez por cambio
+                        # ✅ EVITAR LOGS REPETIDOS - usar clave única por symbol/tf
+                        block_key = f"{symbol}_{tf}_blocked"
                         current_time = time.time()
-                        last_block_key = f"blocked_{symbol}_{tf}"
-                        last_block_time = getattr(self, '_last_block_times', {}).get(last_block_key, 0)
+                        last_log_time = self._last_block_logs.get(block_key, 0)
                         
-                        if current_time - last_block_time > 60:  # Solo cada 60 segundos
-                            if not hasattr(self, '_last_block_times'):
-                                self._last_block_times = {}
-                            self._last_block_times[last_block_key] = current_time
-                            
+                        if current_time - last_log_time > 300:  # 5 minutos entre logs
+                            self._last_block_logs[block_key] = current_time
                             block_msg = f"⏸️ SIGNAL BLOCKED {symbol} {tf}: {color} (Opposite direction)"
                             if self.gui:
                                 self.gui.log_trade(block_msg, 'YELLOW')
