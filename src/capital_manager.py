@@ -146,7 +146,7 @@ class CapitalManager:
         
         # ✅ SOLO BLOQUEAR SI ES DIRECCIÓN OPUESTA AL COOLDOWN
         return change_direction != current_direction
-    
+
     def check_cooldown_reset(self, symbol, tf, new_signal):
         """✅ VERIFICAR SI SE DEBE REINICIAR EL COOLDOWN POR VOLVER A LA SEÑAL INICIAL"""
         if not self.is_cooldown_active(symbol, tf):
@@ -163,7 +163,7 @@ class CapitalManager:
             cooldown_seconds = cooldown_minutes * 60
             self.cooldowns[symbol][tf] = time.time() + cooldown_seconds
             
-            # Actualizar el peso congelado basado en la señal actual
+            # Actualizar el peso congelado basado en la señal actual (sin registrar mensaje)
             w = TIMEFRAME_WEIGHTS[tf]
             if new_signal == "GREEN":
                 frozen_weight = w
@@ -182,7 +182,7 @@ class CapitalManager:
             return True
         
         return False
-    
+ 
     def reset_cooldown(self, symbol, tf):
         """✅ ELIMINAR ESTE MÉTODO O MANTENERLO PARA OTROS USOS PERO NO LIMPIAR COOLDOWNS"""
         # ❌ ELIMINAMOS LA LIMPIEZA DEL COOLDOWN
@@ -198,7 +198,7 @@ class CapitalManager:
             self.gui.log_trade(reset_msg, 'GREEN')
         else:
             print(reset_msg)
-    
+
     def calculate_weight_with_cooldown(self, symbol, signals):
         """✅ CALCULAR PESO TENIENDO EN CUENTA COOLDOWNS"""
         weight = 0.0
@@ -223,7 +223,7 @@ class CapitalManager:
                     else:
                         weight += 0.0  # Fallback seguro
                 else:
-                    # ✅ MISMA DIRECCIÓN - ACTUALIZAR PESO CONGELADO Y USARLO
+                    # ✅ MISMA DIRECCIÓN - ACTUALIZAR PESO CONGELADO SOLO SI CAMBIA
                     if color == "GREEN":
                         new_frozen_weight = w
                     elif color == "YELLOW":
@@ -231,14 +231,20 @@ class CapitalManager:
                     else:
                         new_frozen_weight = 0.0
                     
-                    self.frozen_weights[symbol][tf] = new_frozen_weight
-                    weight += new_frozen_weight
-                    
-                    update_msg = f"🔄 FROZEN WEIGHT UPDATED {symbol} {tf}: {new_frozen_weight:.3f} (Same direction)"
-                    if self.gui:
-                        self.gui.log_trade(update_msg, 'BLUE')
+                    # ✅ SOLO ACTUALIZAR Y REGISTRAR SI EL PESO CONGELADO REALMENTE CAMBIA
+                    current_frozen = self.frozen_weights[symbol][tf]
+                    if current_frozen != new_frozen_weight:
+                        self.frozen_weights[symbol][tf] = new_frozen_weight
+                        weight += new_frozen_weight
+                        
+                        update_msg = f"🔄 FROZEN WEIGHT UPDATED {symbol} {tf}: {new_frozen_weight:.3f} (Same direction)"
+                        if self.gui:
+                            self.gui.log_trade(update_msg, 'BLUE')
+                        else:
+                            print(update_msg)
                     else:
-                        print(update_msg)
+                        # ✅ USAR EL VALOR EXISTENTE SIN REGISTRAR MENSAJE
+                        weight += current_frozen
             else:
                 # ✅ SIN COOLDOWN - CALCULAR NORMALMENTE
                 if color == "GREEN":
@@ -247,7 +253,7 @@ class CapitalManager:
                     weight += w * 0.5
         
         return weight
-    
+ 
     def log_signal_changes(self, symbol, new_signals):
         """✅ REGISTRA CAMBIOS DE SEÑAL Y DETECTA CAMBIOS DE DIRECCIÓN"""
         if not self.first_rebalance_done:
