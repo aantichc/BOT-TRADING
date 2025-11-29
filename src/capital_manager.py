@@ -18,6 +18,8 @@ class CapitalManager:
         self.cooldown_initial_signals = {s: {tf: None for tf in TIMEFRAMES} for s in SYMBOLS}  # ✅ NUEVO: Guarda la señal que inició el cooldown
         self.SYMBOLS = SYMBOLS
         self.first_rebalance_done = False
+        self._last_block_times = {}
+        self._last_frozen_times = {}        
     
     def get_signals(self, symbol):
         """✅ OBTENER SEÑALES OO - CORAZÓN DEL SISTEMA DE TRADING"""
@@ -192,7 +194,6 @@ class CapitalManager:
             self.gui.log_trade(reset_msg, 'GREEN')
         else:
             print(reset_msg)
-
     def calculate_weight_with_cooldown(self, symbol, signals):
         """✅ CALCULAR PESO TENIENDO EN CUENTA COOLDOWNS"""
         weight = 0.0
@@ -209,25 +210,38 @@ class CapitalManager:
                     if frozen_weight is not None:
                         weight += frozen_weight
                         
-                        block_msg = f"⏸️ SIGNAL BLOCKED {symbol} {tf}: {color} (Opposite direction)"
-                        if self.gui:
-                            self.gui.log_trade(block_msg, 'YELLOW')
-                        else:
-                            print(block_msg)
+                        # ✅ EVITAR LOGS REPETIDOS - solo registrar una vez por cambio
+                        current_time = time.time()
+                        last_block_key = f"blocked_{symbol}_{tf}"
+                        last_block_time = getattr(self, '_last_block_times', {}).get(last_block_key, 0)
+                        
+                        if current_time - last_block_time > 60:  # Solo cada 60 segundos
+                            if not hasattr(self, '_last_block_times'):
+                                self._last_block_times = {}
+                            self._last_block_times[last_block_key] = current_time
+                            
+                            block_msg = f"⏸️ SIGNAL BLOCKED {symbol} {tf}: {color} (Opposite direction)"
+                            if self.gui:
+                                self.gui.log_trade(block_msg, 'YELLOW')
+                            else:
+                                print(block_msg)
                     else:
                         weight += 0.0
                 else:
-                    # ✅ MISMA DIRECCIÓN - PERO NO ACTUALIZAMOS EL FROZEN WEIGHT DURANTE COOLDOWN
-                    # ✅ SOLO USAMOS EL FROZEN WEIGHT EXISTENTE SIN MODIFICARLO
+                    # ✅ MISMA DIRECCIÓN - USAR FROZEN WEIGHT EXISTENTE
                     frozen_weight = self.frozen_weights[symbol][tf]
                     if frozen_weight is not None:
                         weight += frozen_weight
                         
-                        # ✅ SOLO REGISTRAR SI ES LA PRIMERA VEZ EN ESTE CICLO
+                        # ✅ EVITAR LOGS REPETIDOS DE FROZEN WEIGHT
                         current_time = time.time()
-                        if not hasattr(self, '_last_frozen_log') or self._last_frozen_log.get((symbol, tf), 0) < current_time - 10:
-                            self._last_frozen_log = getattr(self, '_last_frozen_log', {})
-                            self._last_frozen_log[(symbol, tf)] = current_time
+                        last_frozen_key = f"frozen_{symbol}_{tf}"
+                        last_frozen_time = getattr(self, '_last_frozen_times', {}).get(last_frozen_key, 0)
+                        
+                        if current_time - last_frozen_time > 60:  # Solo cada 60 segundos
+                            if not hasattr(self, '_last_frozen_times'):
+                                self._last_frozen_times = {}
+                            self._last_frozen_times[last_frozen_key] = current_time
                             
                             use_msg = f"🔒 USING FROZEN WEIGHT {symbol} {tf}: {frozen_weight:.3f}"
                             if self.gui:
@@ -244,7 +258,6 @@ class CapitalManager:
                     weight += w * 0.5
         
         return weight
-
     def log_signal_changes(self, symbol, new_signals):
         """✅ REGISTRA CAMBIOS DE SEÑAL Y DETECTA CAMBIOS DE DIRECCIÓN"""
         if not self.first_rebalance_done:
