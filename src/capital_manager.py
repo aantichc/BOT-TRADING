@@ -1,4 +1,4 @@
-# Archivo: capital_manager.py - VERSIÓN CON RESET DE COOLDOWN
+# Archivo: capital_manager.py - VERSIÓN CORREGIDA
 from config import TIMEFRAMES, SYMBOLS, TIMEFRAME_WEIGHTS, MIN_TRADE_DIFF
 from datetime import datetime
 import time
@@ -15,11 +15,13 @@ class CapitalManager:
         self.cooldowns = {s: {tf: 0 for tf in TIMEFRAMES} for s in SYMBOLS}
         self.frozen_weights = {s: {tf: None for tf in TIMEFRAMES} for s in SYMBOLS}
         self.cooldown_directions = {s: {tf: None for tf in TIMEFRAMES} for s in SYMBOLS}
-        self.cooldown_initial_signals = {s: {tf: None for tf in TIMEFRAMES} for s in SYMBOLS}  # ✅ NUEVO: Guarda la señal que inició el cooldown
+        self.cooldown_initial_signals = {s: {tf: None for tf in TIMEFRAMES} for s in SYMBOLS}
         self.SYMBOLS = SYMBOLS
         self.first_rebalance_done = False
+        
+        # ✅ Control de logs repetidos
         self._last_block_times = {}
-        self._last_frozen_times = {}        
+        self._last_frozen_times = {}
     
     def get_signals(self, symbol):
         """✅ OBTENER SEÑALES OO - CORAZÓN DEL SISTEMA DE TRADING"""
@@ -71,7 +73,7 @@ class CapitalManager:
         elif tf == "2h":
             return 120
         return 30
-
+    
     def update_cooldowns(self):
         """✅ ACTUALIZAR Y VERIFICAR COOLDOWNS ACTIVOS - SOLO UNA VEZ CUANDO EXPIRAN"""
         current_time = time.time()
@@ -91,14 +93,14 @@ class CapitalManager:
                         self.gui.log_trade(expired_msg, 'BLUE')
                     else:
                         print(expired_msg)
-
+    
     def start_cooldown(self, symbol, tf, direction, initial_signal):
         """✅ INICIAR COOLDOWN PARA UN TIMEFRAME ESPECÍFICO"""
         cooldown_minutes = self.timeframe_to_minutes(tf) // 2
         cooldown_seconds = cooldown_minutes * 60
         self.cooldowns[symbol][tf] = time.time() + cooldown_seconds
         self.cooldown_directions[symbol][tf] = direction
-        self.cooldown_initial_signals[symbol][tf] = initial_signal  # ✅ GUARDAR SEÑAL QUE INICIÓ EL COOLDOWN
+        self.cooldown_initial_signals[symbol][tf] = initial_signal
         
         # ✅ CONGELAR PESO ACTUAL AL INICIAR COOLDOWN
         w = TIMEFRAME_WEIGHTS[tf]
@@ -119,12 +121,12 @@ class CapitalManager:
     
     def reset_cooldown(self, symbol, tf):
         """✅ RESETEA EL COOLDOWN CUANDO LA SEÑAL VUELVE AL ESTADO INICIAL"""
-        self.cooldowns[symbol][tf] = 0
-        self.frozen_weights[symbol][tf] = None
-        self.cooldown_directions[symbol][tf] = None
-        self.cooldown_initial_signals[symbol][tf] = None
+        # Reiniciar el cooldown a su tiempo máximo completo
+        cooldown_minutes = self.timeframe_to_minutes(tf) // 2
+        cooldown_seconds = cooldown_minutes * 60
+        self.cooldowns[symbol][tf] = time.time() + cooldown_seconds
         
-        reset_msg = f"🔄 COOLDOWN RESET {symbol} {tf} - Signal returned to initial state"
+        reset_msg = f"🔄 COOLDOWN RESET {symbol} {tf} - Timer reset to {cooldown_minutes} minutes"
         if self.gui:
             self.gui.log_trade(reset_msg, 'GREEN')
         else:
@@ -152,7 +154,7 @@ class CapitalManager:
         
         # ✅ SOLO BLOQUEAR SI ES DIRECCIÓN OPUESTA AL COOLDOWN
         return change_direction != current_direction
-
+    
     def check_cooldown_reset(self, symbol, tf, new_signal):
         """✅ VERIFICAR SI SE DEBE REINICIAR EL COOLDOWN POR VOLVER A LA SEÑAL INICIAL"""
         if not self.is_cooldown_active(symbol, tf):
@@ -164,38 +166,13 @@ class CapitalManager:
         
         # ✅ REINICIAR COOLDOWN SI LA NUEVA SEÑAL COINCIDE CON LA SEÑAL QUE INICIÓ EL COOLDOWN
         if new_signal == initial_signal:
-            # Reiniciar el cooldown a su tiempo máximo completo
-            cooldown_minutes = self.timeframe_to_minutes(tf) // 2
-            cooldown_seconds = cooldown_minutes * 60
-            self.cooldowns[symbol][tf] = time.time() + cooldown_seconds
-            
-            reset_msg = f"🔄 COOLDOWN RESET {symbol} {tf} - Timer reset to {cooldown_minutes} minutes"
-            if self.gui:
-                self.gui.log_trade(reset_msg, 'GREEN')
-            else:
-                print(reset_msg)
-            
+            self.reset_cooldown(symbol, tf)
             return True
         
         return False
-
-    def reset_cooldown(self, symbol, tf):
-        """✅ ELIMINAR ESTE MÉTODO O MANTENERLO PARA OTROS USOS PERO NO LIMPIAR COOLDOWNS"""
-        # ❌ ELIMINAMOS LA LIMPIEZA DEL COOLDOWN
-        # self.cooldowns[symbol][tf] = 0  # ❌ ESTA LÍNEA SE ELIMINA
-        
-        # Solo limpiamos las otras variables pero mantenemos el cooldown activo
-        self.frozen_weights[symbol][tf] = None
-        self.cooldown_directions[symbol][tf] = None
-        self.cooldown_initial_signals[symbol][tf] = None
-        
-        reset_msg = f"🔄 COOLDOWN VARIABLES CLEARED {symbol} {tf}"
-        if self.gui:
-            self.gui.log_trade(reset_msg, 'GREEN')
-        else:
-            print(reset_msg)
+    
     def calculate_weight_with_cooldown(self, symbol, signals):
-        """✅ CALCULAR PESO TENIENDO EN CUENTA COOLDOWNS"""
+        """✅ CALCULAR PESO TENIENDO EN CUENTA COOLDOWNS - CORREGIDO"""
         weight = 0.0
         
         for tf, color in signals.items():
@@ -232,22 +209,6 @@ class CapitalManager:
                     frozen_weight = self.frozen_weights[symbol][tf]
                     if frozen_weight is not None:
                         weight += frozen_weight
-                        
-                        # ✅ EVITAR LOGS REPETIDOS DE FROZEN WEIGHT
-                        current_time = time.time()
-                        last_frozen_key = f"frozen_{symbol}_{tf}"
-                        last_frozen_time = getattr(self, '_last_frozen_times', {}).get(last_frozen_key, 0)
-                        
-                        if current_time - last_frozen_time > 60:  # Solo cada 60 segundos
-                            if not hasattr(self, '_last_frozen_times'):
-                                self._last_frozen_times = {}
-                            self._last_frozen_times[last_frozen_key] = current_time
-                            
-                            use_msg = f"🔒 USING FROZEN WEIGHT {symbol} {tf}: {frozen_weight:.3f}"
-                            if self.gui:
-                                self.gui.log_trade(use_msg, 'BLUE')
-                            else:
-                                print(use_msg)
                     else:
                         weight += 0.0
             else:
@@ -258,8 +219,9 @@ class CapitalManager:
                     weight += w * 0.5
         
         return weight
+    
     def log_signal_changes(self, symbol, new_signals):
-        """✅ REGISTRA CAMBIOS DE SEÑAL Y DETECTA CAMBIOS DE DIRECCIÓN"""
+        """✅ REGISTRA CAMBIOS DE SEÑAL - CORREGIDO PARA BLOQUEOS"""
         if not self.first_rebalance_done:
             return
             
@@ -276,17 +238,18 @@ class CapitalManager:
                 
                 # ✅ 2. VERIFICAR SI ESTE CAMBIO DEBE SER BLOQUEADO
                 if self.should_block_signal_change(symbol, tf, new_color):
-                    # ❌ CAMBIO BLOQUEADO - NO SE REGISTRA NI ACTUALIZA last_signals
+                    # ❌ CAMBIO BLOQUEADO - NO SE REGISTRA NI ACTUALIZA
+                    # ❌ MANTENEMOS LA SEÑAL ANTERIOR EN last_signals
                     continue
                 
-                # ✅ 3. LOG NORMAL DEL CAMBIO (AZUL)
+                # ✅ 3. LOG NORMAL DEL CAMBIO (solo si no está bloqueado)
                 change_msg = f"🔄 {symbol} {tf}: {old_color} → {new_color}"
                 if self.gui:
                     self.gui.log_trade(change_msg, 'BLUE')
                 else:
                     print(change_msg)
                 
-                # ✅ 4. DETECTAR CAMBIO DE DIRECCIÓN (AMARILLO)
+                # ✅ 4. DETECTAR CAMBIO DE DIRECCIÓN
                 current_direction = self.get_change_direction(old_color, new_color)
                 last_direction = self.last_changes[symbol].get(tf)
                 
@@ -300,22 +263,12 @@ class CapitalManager:
                     else:
                         print(direction_msg)
                     
-                    # ✅ 5. MANEJO DE COOLDOWN
-                    if self.is_cooldown_active(symbol, tf):
-                        # ✅ COOLDOWN ACTIVO - NO SE PERMITE NUEVO COOLDOWN
-                        cooldown_msg = f"⚠️ COOLDOWN ACTIVE {symbol} {tf} - Direction change detected but no new cooldown"
-                        if self.gui:
-                            self.gui.log_trade(cooldown_msg, 'YELLOW')
-                        else:
-                            print(cooldown_msg)
-                    else:
-                        # ✅ NO HAY COOLDOWN - INICIAR UNO NUEVO
+                    if not self.is_cooldown_active(symbol, tf):
                         self.start_cooldown(symbol, tf, current_direction, new_color)
                 
-                # ✅ ACTUALIZAR ÚLTIMA DIRECCIÓN REGISTRADA
                 self.last_changes[symbol][tf] = current_direction
             
-            # ✅ ACTUALIZAR SEÑALES ANTERIORES (excepto si fueron bloqueadas)
+            # ✅ ACTUALIZAR SEÑALES ANTERIORES SOLO SI NO ESTÁN BLOQUEADAS
             if not self.should_block_signal_change(symbol, tf, new_color):
                 self.last_signals[symbol][tf] = new_color
 
@@ -331,7 +284,16 @@ class CapitalManager:
         return weight
     
     def has_changed(self, symbol, new_weight):
+        """✅ VERIFICAR SI EL PESO CAMBIÓ - RESPETANDO COOLDOWNS"""
         old = self.last_weights[symbol]
+        
+        # ✅ SI HAY ALGÚN COOLDOWN ACTIVO EN ESTE SYMBOL, NO PERMITIR CAMBIOS HACIA ABAJO
+        has_active_cooldown = any(self.is_cooldown_active(symbol, tf) for tf in TIMEFRAMES)
+        
+        if has_active_cooldown and new_weight < old:
+            # ❌ BLOQUEAR CAMBIOS NEGATIVOS DURANTE COOLDOWN
+            return False
+        
         changed = abs(new_weight - old) > 0.0
         self.last_weights[symbol] = new_weight
         return changed
