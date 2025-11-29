@@ -19,9 +19,9 @@ class CapitalManager:
         self.SYMBOLS = SYMBOLS
         self.first_rebalance_done = False
         
-        # ✅ Control de logs repetidos
+        # ✅ Control de logs repetidos - MEJORADO
         self._last_block_logs = {}
-        self._last_frozen_logs = {}
+        self._blocked_states = {}
     
     def get_signals(self, symbol):
         """✅ OBTENER SEÑALES OO - CORAZÓN DEL SISTEMA DE TRADING"""
@@ -186,13 +186,10 @@ class CapitalManager:
                     if frozen_weight is not None:
                         weight += frozen_weight
                         
-                        # ✅ EVITAR LOGS REPETIDOS - usar clave única por symbol/tf
-                        block_key = f"{symbol}_{tf}_blocked"
-                        current_time = time.time()
-                        last_log_time = self._last_block_logs.get(block_key, 0)
-                        
-                        if current_time - last_log_time > 300:  # 5 minutos entre logs
-                            self._last_block_logs[block_key] = current_time
+                        # ✅ EVITAR LOGS REPETIDOS - SOLO REGISTRAR CAMBIO DE ESTADO
+                        current_state = f"{symbol}_{tf}_blocked_{color}"
+                        if self._blocked_states.get(current_state) != color:
+                            self._blocked_states[current_state] = color
                             block_msg = f"⏸️ SIGNAL BLOCKED {symbol} {tf}: {color} (Opposite direction)"
                             if self.gui:
                                 self.gui.log_trade(block_msg, 'YELLOW')
